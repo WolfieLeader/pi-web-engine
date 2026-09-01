@@ -44,7 +44,7 @@ pi install npm:pi-websearch
 Or directly from GitHub:
 
 ```sh
-pi install git:github.com/WolfieLeader/pi-web-search
+pi install git:github.com/WolfieLeader/pi-websearch
 ```
 
 For local development:
@@ -58,7 +58,7 @@ Then select `gpt-5.6-luna`, `gpt-5.6-sol`, or `gpt-5.6-terra` with `/model`. Pi'
 
 ## Development
 
-The project uses TypeScript 7, pnpm 11, OXC, Knip, Vitest, Zod 4, and tsdown.
+The project uses TypeScript 7, pnpm 11, OXC, Knip, Vitest, Zod 4, and tsdown. Oxlint runs type-aware linting, experimental type-check diagnostics, strict correctness/pedantic/performance/suspicious categories, and the vendored [anti-slop](https://github.com/dmmulroy/anti-slop) ruleset.
 
 ```sh
 pnpm install

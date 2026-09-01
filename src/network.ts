@@ -17,17 +17,17 @@ export async function assertPublicHttpUrl(
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("URL must use HTTP or HTTPS");
   }
-  if (url.username || url.password) {
+  if (url.username.length > 0 || url.password.length > 0) {
     throw new Error("URLs containing credentials are not allowed");
   }
 
   const hostname = normalizeHostname(url.hostname);
-  if (!hostname) throw new Error("URL must include a hostname");
+  if (hostname.length === 0) throw new Error("URL must include a hostname");
   if (hostname === "localhost" || hostname.endsWith(".localhost")) {
     throw new Error(`Blocked internal hostname: ${hostname}`);
   }
 
-  if (isIP(hostname)) {
+  if (isIP(hostname) !== 0) {
     assertPublicIp(hostname, hostname);
     return url;
   }
@@ -56,7 +56,7 @@ export async function fetchPublicUrl(
     if (!REDIRECT_STATUSES.has(response.status)) return response;
 
     const location = response.headers.get("location");
-    if (!location) return response;
+    if (location === null) return response;
     if (redirects === MAX_REDIRECTS) throw new Error(`Too many redirects fetching ${input}`);
 
     url = await assertPublicHttpUrl(new URL(location, url), lookup);
@@ -76,7 +76,7 @@ export async function readBoundedText(
   response: Response,
   maximumBytes = MAX_RESPONSE_BYTES,
 ): Promise<string> {
-  if (!response.body) return "";
+  if (response.body === null) return "";
 
   const reader = response.body.getReader();
   const chunks: Uint8Array[] = [];
@@ -104,15 +104,15 @@ export async function readBoundedText(
   return new TextDecoder().decode(body);
 }
 
-async function defaultLookup(hostname: string): Promise<readonly LookupAddress[]> {
-  return dnsLookup(hostname, { all: true, verbatim: true });
+function defaultLookup(hostname: string): Promise<readonly LookupAddress[]> {
+  return dnsLookup(hostname, { all: true, order: "verbatim" });
 }
 
 function normalizeHostname(hostname: string): string {
   return hostname
     .toLowerCase()
-    .replace(/^\[|\]$/g, "")
-    .replace(/\.$/, "");
+    .replaceAll(/^\[|\]$/gu, "")
+    .replace(/\.$/u, "");
 }
 
 function assertPublicIp(address: string, hostname: string): void {
@@ -156,9 +156,9 @@ function isBlockedIpv6(address: string): boolean {
   if (/^fe[89ab]/u.test(normalized)) return true;
 
   const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/u.exec(normalized)?.[1];
-  return mapped ? isBlockedIpv4(mapped) : false;
+  return mapped === undefined ? false : isBlockedIpv4(mapped);
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }

@@ -1,16 +1,42 @@
 {
   "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "options": {
+    "typeAware": true
+  },
   "categories": {
     "correctness": "error",
+    "pedantic": "error",
     "perf": "error",
     "suspicious": "error"
   },
-  "plugins": ["eslint", "typescript", "unicorn", "oxc"],
+  "plugins": ["eslint", "import", "node", "oxc", "promise", "typescript", "unicorn", "vitest"],
+  "jsPlugins": [
+    {
+      "name": "anti-slop",
+      "specifier": "./tools/oxlint/anti-slop/index.ts"
+    }
+  ],
   "rules": {
+    "anti-slop/no-chained-type-assertions": "error",
+    "anti-slop/no-conditional-empty-object-spread": "error",
+    "anti-slop/no-known-value-widening": "error",
+    "anti-slop/no-module-mocking": "error",
+    "anti-slop/no-object-parameters": "error",
+    "anti-slop/no-reflect-apply": "error",
+    "anti-slop/no-reflect-get": "error",
+    "anti-slop/no-runtime-typeof": "error",
+    "anti-slop/no-shape-in-symbol-names": "error",
+    "anti-slop/no-unknown-parameters": "error",
+    "anti-slop/no-unknown-returns": "error",
+    "anti-slop/no-unknown-type-aliases": "error",
+    "anti-slop/no-unsafe-dictionary-type": "error",
+    "anti-slop/no-widen-then-assert": "error",
+    "anti-slop/require-safety-comment-for-type-assertion": "error",
     "eqeqeq": "error",
     "no-console": "error",
     "no-else-return": "error",
     "no-implicit-coercion": "error",
+    // Redirect and response-body loops are intentionally sequential; parallelizing them changes behavior.
     "no-await-in-loop": "off",
     "no-param-reassign": "error",
     "no-throw-literal": "error",
@@ -19,6 +45,9 @@
     "typescript/no-explicit-any": "error",
     "typescript/no-floating-promises": "error",
     "typescript/no-misused-promises": "error",
+    // Pi and WHATWG APIs intentionally expose stateful callback/context/request objects. A shallow
+    // Readonly wrapper would neither make them immutable nor match the SDK contracts.
+    "typescript/prefer-readonly-parameter-types": "off",
     "typescript/no-unnecessary-type-assertion": "error",
     "typescript/no-unsafe-argument": "error",
     "typescript/no-unsafe-assignment": "error",
@@ -28,8 +57,24 @@
     "typescript/restrict-template-expressions": "error",
     "unicorn/error-message": "error",
     "unicorn/no-array-callback-reference": "error",
+    // HTTP, DOM, and Pi provider contracts use null as a distinct protocol value.
     "unicorn/no-null": "off",
     "unicorn/prefer-node-protocol": "error"
   },
-  "ignorePatterns": ["dist/**", "coverage/**"]
+  "ignorePatterns": [
+    ".agent/**",
+    ".agents/**",
+    ".claude/**",
+    ".codex/**",
+    ".continue/**",
+    ".cursor/**",
+    ".gemini/**",
+    ".opencode/**",
+    ".pi/**",
+    ".roo/**",
+    ".windsurf/**",
+    "coverage/**",
+    "dist/**",
+    "tools/oxlint/anti-slop/**"
+  ]
 }

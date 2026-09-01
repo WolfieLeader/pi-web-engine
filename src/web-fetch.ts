@@ -10,19 +10,25 @@ export const MAX_FETCH_TIMEOUT_SECONDS = 120;
 export type FetchFormat = "html" | "markdown" | "text";
 
 export interface WebFetchDetails {
-  contentType: string;
-  finalUrl: string;
-  format: FetchFormat;
+  readonly contentType: string;
+  readonly finalUrl: string;
+  readonly format: FetchFormat;
   title?: string;
-  truncated: boolean;
+  readonly truncated: boolean;
 }
 
 interface FetchOptions {
-  format: FetchFormat;
-  signal?: AbortSignal;
-  timeoutSeconds?: number;
+  readonly format: FetchFormat;
+  readonly signal: AbortSignal | undefined;
+  readonly timeoutSeconds: number;
 }
 
+interface ConvertedContent {
+  readonly content: string;
+  readonly title?: string;
+}
+
+const MILLISECONDS_PER_SECOND = 1_000;
 const turndown = new TurndownService({
   codeBlockStyle: "fenced",
   headingStyle: "atx",
@@ -32,15 +38,14 @@ export async function fetchWebContent(
   url: string,
   options: FetchOptions,
 ): Promise<AgentToolResult<WebFetchDetails>> {
-  const timeoutSeconds = options.timeoutSeconds ?? DEFAULT_FETCH_TIMEOUT_SECONDS;
-  const timeoutSignal = AbortSignal.timeout(timeoutSeconds * 1_000);
-  const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
-
+  const timeoutSignal = AbortSignal.timeout(options.timeoutSeconds * MILLISECONDS_PER_SECOND);
+  const signal =
+    options.signal === undefined ? timeoutSignal : AbortSignal.any([options.signal, timeoutSignal]);
   const response = await fetchPublicUrl(url, {
     headers: {
       Accept: acceptHeader(options.format),
       "Accept-Language": "en-US,en;q=0.9",
-      "User-Agent": "pi-websearch/0.0.1 (+https://github.com/WolfieLeader/pi-web-search)",
+      "User-Agent": "pi-websearch/0.0.1 (+https://github.com/WolfieLeader/pi-websearch)",
     },
     signal,
   });
@@ -49,22 +54,24 @@ export async function fetchWebContent(
   const contentType = response.headers.get("content-type") ?? "";
   assertTextContentType(contentType);
   const body = await readBoundedText(response);
-  const converted = convertContent(body, contentType, options.format, response.url || url);
+  const finalUrl = response.url.length > 0 ? response.url : url;
+  const converted = convertContent(body, contentType, options.format, finalUrl);
   const truncation = truncateHead(converted.content);
   let output = truncation.content;
   if (truncation.truncated) {
     output += `\n\n[Output truncated: ${truncation.outputLines} of ${truncation.totalLines} lines, ${truncation.outputBytes} of ${truncation.totalBytes} bytes.]`;
   }
 
+  const details: WebFetchDetails = {
+    contentType,
+    finalUrl,
+    format: options.format,
+    truncated: truncation.truncated,
+  };
+  if (converted.title !== undefined) details.title = converted.title;
   return {
     content: [{ type: "text", text: output }],
-    details: {
-      contentType,
-      finalUrl: response.url || url,
-      format: options.format,
-      ...(converted.title ? { title: converted.title } : {}),
-      truncated: truncation.truncated,
-    },
+    details,
   };
 }
 
@@ -73,7 +80,7 @@ export function convertContent(
   contentType: string,
   format: FetchFormat,
   url: string,
-): { content: string; title?: string } {
+): ConvertedContent {
   if (!contentType.toLowerCase().includes("text/html")) return { content: body };
   if (format === "html") return { content: body };
 
@@ -84,24 +91,23 @@ export function convertContent(
     )) {
       element.remove();
     }
-    return { content: document.body?.textContent.trim() ?? "" };
+    return { content: document.body.textContent.trim() };
   }
 
   const article = new Readability(document, { charThreshold: 0 }).parse();
-  const html = article?.content ?? document.body?.innerHTML ?? body;
-  return {
-    content: turndown.turndown(html).trim(),
-    ...(article?.title ? { title: article.title } : titleFromDocument(document, url)),
-  };
+  const html = article?.content ?? document.body.innerHTML;
+  const content = turndown.turndown(html).trim();
+  const title = article?.title ?? titleFromDocument(document, url);
+  return title === undefined ? { content } : { content, title };
 }
 
-function titleFromDocument(document: Document, url: string): { title?: string } {
+function titleFromDocument(document: Document, url: string): string | undefined {
   const title = document.title.trim();
-  if (title) return { title };
+  if (title.length > 0) return title;
   try {
-    return { title: new URL(url).hostname };
+    return new URL(url).hostname;
   } catch {
-    return {};
+    return undefined;
   }
 }
 
@@ -114,7 +120,7 @@ function acceptHeader(format: FetchFormat): string {
 function assertTextContentType(contentType: string): void {
   const mime = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
   if (
-    !mime ||
+    mime.length === 0 ||
     mime.startsWith("text/") ||
     mime === "application/json" ||
     mime.endsWith("+json") ||

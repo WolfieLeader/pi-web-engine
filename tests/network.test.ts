@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assertPublicHttpUrl, readBoundedText } from "../src/network.js";
 
-const publicLookup = async () => [{ address: "93.184.216.34", family: 4 }] as const;
+const publicLookup = () => Promise.resolve([{ address: "93.184.216.34", family: 4 }] as const);
 
 describe("assertPublicHttpUrl", () => {
   it("accepts a public HTTPS URL", async () => {
@@ -25,9 +25,9 @@ describe("assertPublicHttpUrl", () => {
 
   it("blocks a hostname resolving to a private address", async () => {
     await expect(
-      assertPublicHttpUrl("https://example.test", async () => [
-        { address: "192.168.1.2", family: 4 },
-      ]),
+      assertPublicHttpUrl("https://example.test", () =>
+        Promise.resolve([{ address: "192.168.1.2", family: 4 }]),
+      ),
     ).rejects.toThrow("Blocked internal address");
   });
 

@@ -54,7 +54,7 @@ const webSearchTool = defineTool<typeof webSearchParameters, WebSearchDetails>({
     "Use web_search whenever current or external information could change the answer, and cite the returned sources.",
   ],
   parameters: webSearchParameters,
-  async execute(_toolCallId, parameters, signal, onUpdate, context) {
+  execute(_toolCallId, parameters, signal, onUpdate, context) {
     onUpdate?.({
       content: [{ type: "text", text: `Searching for “${parameters.query}”…` }],
       details: {
@@ -67,8 +67,8 @@ const webSearchTool = defineTool<typeof webSearchParameters, WebSearchDetails>({
     return searchWithCodex(
       parameters.query,
       {
-        ...(parameters.allowed_domains ? { allowedDomains: parameters.allowed_domains } : {}),
-        ...(signal ? { signal } : {}),
+        allowedDomains: parameters.allowed_domains,
+        signal,
       },
       context,
     );
@@ -86,7 +86,7 @@ const webFetchTool = defineTool<typeof webFetchParameters, WebFetchDetails>({
     "Use web_fetch to inspect a relevant URL returned by web_search or supplied by the user.",
   ],
   parameters: webFetchParameters,
-  async execute(_toolCallId, parameters, signal, onUpdate) {
+  execute(_toolCallId, parameters, signal, onUpdate) {
     const format = parameters.format ?? "markdown";
     onUpdate?.({
       content: [{ type: "text", text: `Fetching ${parameters.url}…` }],
@@ -99,7 +99,7 @@ const webFetchTool = defineTool<typeof webFetchParameters, WebFetchDetails>({
     });
     return fetchWebContent(parameters.url, {
       format,
-      ...(signal ? { signal } : {}),
+      signal,
       timeoutSeconds: parameters.timeout ?? DEFAULT_FETCH_TIMEOUT_SECONDS,
     });
   },

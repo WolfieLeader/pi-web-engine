@@ -6,5 +6,21 @@
   "semi": true,
   "singleQuote": false,
   "trailingComma": "all",
-  "ignorePatterns": ["dist", "coverage", "pnpm-lock.yaml"]
+  "ignorePatterns": [
+    ".agent/**",
+    ".agents/**",
+    ".claude/**",
+    ".codex/**",
+    ".continue/**",
+    ".cursor/**",
+    ".gemini/**",
+    ".opencode/**",
+    ".pi/**",
+    ".roo/**",
+    ".windsurf/**",
+    "coverage/**",
+    "dist/**",
+    "pnpm-lock.yaml",
+    "tools/oxlint/anti-slop/**"
+  ]
 }
