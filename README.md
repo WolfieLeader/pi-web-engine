@@ -1,75 +1,139 @@
-# pi-web-engine
+<div align="center">
 
-Focused web access for [Pi](https://github.com/earendil-works/pi-mono): native OpenAI Codex search plus safe, readable web fetching.
+<img src="https://github.com/WolfieLeader/pi-web-engine/blob/main/assets/pi-web-engine.svg" align="center" alt="pi-web-engine banner" />
 
-Version history is documented in the [changelog](CHANGELOG.md). This focused release does not include Exa, Firecrawl, or Tavily.
+<h1 align="center">pi-web-engine</h1>
 
-## Tools
+<p align="center">
+  Native OpenAI Codex web search and secure, readable web fetching.<br/>
+  Built for Pi with no additional search API key.
+</p>
 
-### `web_search`
+<a href="https://opensource.org/licenses/MIT" rel="nofollow"><img src="https://img.shields.io/github/license/WolfieLeader/pi-web-engine?color=DC343B" alt="License"></a>
+<a href="https://www.npmjs.com/package/pi-web-engine" rel="nofollow"><img src="https://img.shields.io/npm/v/pi-web-engine?color=0078D4" alt="npm version"></a>
+<a href="https://www.npmjs.com/package/pi-web-engine" rel="nofollow"><img src="https://img.shields.io/npm/dt/pi-web-engine.svg?color=03C03C" alt="npm downloads"></a>
+<a href="https://github.com/WolfieLeader/pi-web-engine" rel="nofollow"><img src="https://img.shields.io/github/stars/WolfieLeader/pi-web-engine" alt="stars"></a>
 
-Uses the active model from Pi's official OpenAI Codex provider and its existing OAuth session to call Codex's native standalone search endpoint. It returns search evidence and source URLs for the active model to use in its answer.
+</div>
 
-- Credentials are resolved through Pi; no second API key is required.
-- Codex credentials are sent only to the official `https://chatgpt.com/backend-api` endpoint.
-- Optional `allowed_domains` filters narrow the native search.
-- Follows the Codex CLI's provider-level capability check rather than maintaining a model-name allowlist.
-- The request contract follows the official Codex CLI's [standalone web-search extension](https://github.com/openai/codex/tree/main/codex-rs/ext/web-search) and `codex/alpha/search` endpoint. Because that endpoint is explicitly alpha, releases should retain contract tests and be verified against a live Codex session.
+## About 📖
 
-### `web_fetch`
+`pi-web-engine` gives [Pi](https://github.com/earendil-works/pi-mono) two focused tools: native web search through the active OpenAI Codex model and hardened fetching of public web pages.
 
-Fetches a public HTTP(S) URL and returns `markdown` (default), `text`, or `html`.
+Search reuses Pi's existing Codex OAuth session, so there is no second API key to configure. Fetching converts pages into model-friendly Markdown while applying strict network, redirect, content-type, and response-size protections.
 
-- Extracts readable article content from HTML.
-- Blocks localhost, private/reserved IP addresses, IPv4 transition addresses, URL credentials, non-HTTP schemes, and redirects to blocked targets.
-- Rejects non-text content and responses larger than 2 MB.
-- Truncates tool output to Pi's 50 KB / 2,000-line limit.
+> This focused release does not include Exa, Firecrawl, or Tavily. See the [roadmap](#roadmap-).
 
-> [!NOTE]
-> Hostnames are validated by the connector when it opens each socket, including after redirects, to prevent DNS rebinding into private networks. This is defense in depth, not a sandbox boundary: Pi extensions execute with the user's permissions, so install only code you trust.
+## Features 🌟
 
-## Requirements
+- 🔎 **Native Codex Search** — follows the official Codex CLI's standalone web-search contract
+- 🔑 **No Additional Search Key** — securely reuses the Codex OAuth session managed by Pi
+- 🧠 **Model-Agnostic Integration** — supports models from Pi's official `openai-codex` provider without a brittle model-name allowlist
+- 🛡️ **Hardened Web Fetching** — blocks private networks, DNS rebinding, unsafe redirects, URL credentials, and non-HTTP schemes
+- 📄 **Readable Output** — extracts article content and returns Markdown, plain text, or HTML
+- 📏 **Bounded Responses** — enforces download, provider-response, line, and tool-output limits
+- 🧰 **Type-Safe & Tested** — built with TypeScript and TypeBox, with contract and security tests
+
+## Installation 📦
+
+### Requirements ✅
 
 - Node.js 24.11 or newer
 - Pi 0.84.4 or newer
-- An OpenAI Codex login and a model from Pi's official `openai-codex` provider for `web_search`
+- An OpenAI Codex login for `web_search`
 
-## Install
+### Install from npm 🔥
 
-From npm:
-
-```sh
+```bash
 pi install npm:pi-web-engine
 ```
 
 Or directly from GitHub:
 
-```sh
+```bash
 pi install git:github.com/WolfieLeader/pi-web-engine
 ```
 
-For local development:
+## Quick Start 🚀
 
-```sh
-pnpm install
-pi -e ./src/index.ts
+1. Start Pi.
+2. Use `/login` to create an OpenAI Codex session.
+3. Use `/model` to select a model from the official `openai-codex` provider.
+4. Ask Pi to search or fetch the web:
+
+```text
+Search the web for the latest OpenAI Codex release and summarize the changes.
+
+Fetch https://example.com and return the page as Markdown.
 ```
 
-Then select a model from the official `openai-codex` provider with `/model`. Pi's `/login` command can create the required Codex session.
+No additional configuration is required.
 
-## Development
+## Tools 🧰
 
-The project uses TypeScript 7, pnpm 11, OXC, Knip, Vitest, TypeBox, and tsdown. Oxlint runs type-aware linting, experimental type-check diagnostics, strict correctness/pedantic/performance/suspicious categories, and the vendored [anti-slop](https://github.com/dmmulroy/anti-slop) ruleset. Anti-slop is vendored intentionally, as required by its upstream installation guidance; it is development-only and excluded from the published npm package.
+### `web_search` 🔎
 
-```sh
+Searches the live web through Codex's native standalone search endpoint and returns evidence with normalized source URLs.
+
+| Parameter         | Type       | Required | Description                                      |
+| ----------------- | ---------- | -------- | ------------------------------------------------ |
+| `query`           | `string`   | Yes      | Search query or question                         |
+| `allowed_domains` | `string[]` | No       | Restrict results to up to 100 normalized domains |
+
+- Credentials are resolved through Pi and sent only to the official `https://chatgpt.com/backend-api` endpoint.
+- The active model must use Pi's official `openai-codex` provider and `openai-codex-responses` API.
+- Search output is limited to 50 KB or 2,000 lines and includes an explicit truncation notice when needed.
+
+### `web_fetch` 📄
+
+Fetches a public HTTP(S) URL and returns readable content.
+
+| Parameter | Type                             | Required | Description                                   |
+| --------- | -------------------------------- | -------- | --------------------------------------------- |
+| `url`     | `string`                         | Yes      | Public HTTP or HTTPS URL                      |
+| `format`  | `"markdown" \| "text" \| "html"` | No       | Output format; defaults to `"markdown"`       |
+| `timeout` | `integer`                        | No       | Timeout in seconds, from 1 to 120; default 30 |
+
+- HTML pages are parsed with Mozilla Readability before Markdown or text conversion.
+- Non-text content and responses larger than 2 MB are rejected.
+- Tool output is limited to 50 KB or 2,000 lines.
+
+## Security 🛡️
+
+- 🌐 **Network Boundaries** — rejects localhost, private and reserved addresses, IPv4 transition addresses, URL credentials, and unsupported schemes
+- 🔁 **Safe Redirects** — validates every redirect target and removes sensitive headers from cross-origin redirects
+- 🧱 **DNS Rebinding Protection** — validates hostnames whenever the connector opens a socket, including after redirects
+- 🔒 **Credential Redaction** — removes OAuth credentials from bounded provider errors before they reach tool output
+
+> [!IMPORTANT]
+> These controls are defense in depth, not a sandbox boundary. Pi extensions execute with the user's permissions, so install only code you trust. Retrieved web content is untrusted and may contain prompt-injection attempts.
+
+## Codex Compatibility 🔌
+
+- 🥇 **Primary Source of Truth** — the official Codex app and CLI
+- 🔎 **Search Contract** — the Codex CLI's [standalone web-search extension](https://github.com/openai/codex/tree/main/codex-rs/ext/web-search) and `codex/alpha/search` endpoint
+- 📚 **Supporting Documentation** — OpenAI's public [web-search guide](https://developers.openai.com/api/docs/guides/tools-web-search), which describes the related Responses API behavior
+- 🧪 **Release Policy** — because the standalone endpoint is explicitly alpha, every release should retain request-contract tests and receive live Codex verification
+
+## Development 🛠️
+
+```bash
 pnpm install
 pnpm check
 pnpm build
 ```
 
-Pi requires TypeBox schemas at the extension tool boundary and provides TypeBox to installed extensions. The extension reuses that peer dependency for both tool parameters and untrusted provider response validation.
+For local Pi development:
 
-## Roadmap
+```bash
+pi -e ./src/index.ts
+```
+
+- 🧰 **Tooling** — TypeScript, pnpm, OXC, Knip, Vitest, TypeBox, and tsdown
+- 📐 **Validation** — reuses Pi's TypeBox peer dependency for tool schemas and untrusted provider responses
+- 🧹 **Linting** — the development-only [anti-slop](https://github.com/dmmulroy/anti-slop) Oxlint plugin is vendored as required by upstream, retains its MIT license and provenance, and is excluded from the npm package
+
+## Roadmap 🗺️
 
 Possible follow-up releases:
 
@@ -77,8 +141,21 @@ Possible follow-up releases:
 2. Firecrawl search and extraction
 3. Tavily provider support
 4. Provider routing and configuration
-5. Integration tests against live providers (opt-in and credential-gated)
+5. Opt-in, credential-gated integration tests against live providers
 
-## License
+Version history is available in the [changelog](CHANGELOG.md).
 
-[MIT](LICENSE)
+## Contributions 🤝
+
+- Open an [issue](https://github.com/WolfieLeader/pi-web-engine/issues) or feature request
+- Submit a PR to improve the extension
+- Star the repository if you find it useful
+
+<div align="center">
+<br/>
+
+Crafted carefully by [WolfieLeader](https://github.com/WolfieLeader)
+
+This project is licensed under the [MIT License](https://opensource.org/licenses/MIT).
+
+</div>
