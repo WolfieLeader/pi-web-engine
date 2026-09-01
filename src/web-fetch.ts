@@ -3,6 +3,7 @@ import { truncateHead, type AgentToolResult } from "@earendil-works/pi-coding-ag
 import { parseHTML } from "linkedom";
 import TurndownService from "turndown";
 import { fetchPublicUrl, readBoundedText } from "./network.js";
+import { DEFAULT_USER_AGENT } from "./settings.js";
 
 export const DEFAULT_FETCH_TIMEOUT_SECONDS = 30;
 export const MAX_FETCH_TIMEOUT_SECONDS = 120;
@@ -22,6 +23,7 @@ interface FetchOptions {
   readonly format: FetchFormat;
   readonly signal: AbortSignal | undefined;
   readonly timeoutSeconds: number;
+  readonly userAgent?: string;
 }
 
 interface ConvertedContent {
@@ -77,7 +79,7 @@ async function requestWebResponse(url: string, options: FetchOptions): Promise<R
       headers: {
         Accept: acceptHeader(options.format),
         "Accept-Language": "en-US,en;q=0.9",
-        "User-Agent": "pi-web-engine/0.1.1 (+https://github.com/WolfieLeader/pi-web-engine)",
+        "User-Agent": options.userAgent ?? DEFAULT_USER_AGENT,
       },
       signal,
     },

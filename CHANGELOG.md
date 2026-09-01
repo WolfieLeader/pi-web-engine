@@ -9,11 +9,12 @@ All notable changes to this project are documented here. The project follows [Se
 - Advertised accepted JSON, XML, and JavaScript text types as low-priority `web_fetch` fallbacks while preserving the requested format preference.
 - Added sanitized, model-visible final-URL provenance when a fetch follows redirects.
 - Added first-party verification guidance for time-sensitive search claims and clarified that external web access does not guarantee per-result freshness.
+- Added an operator-controlled, complete `web_fetch` User-Agent override through namespaced global or trusted-project Pi settings.
 
 ### Security
 
 - Redacted credential-like query values and omitted fragments from model-visible redirect provenance.
-- Added regression coverage for structured request negotiation, GitHub-style JSON responses, redirect provenance, and URL credentials in redirects.
+- Added regression coverage for structured request negotiation, GitHub-style JSON responses, redirect provenance, URL credentials in redirects, and User-Agent validation and precedence.
 
 ## [0.1.0] - 2026-09-01
 

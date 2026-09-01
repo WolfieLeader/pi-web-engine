@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { convertContent, fetchWebContent } from "../src/web-fetch.js";
+import { DEFAULT_USER_AGENT } from "../src/settings.js";
 
 const html = `<!doctype html>
 <html>
@@ -71,11 +72,23 @@ describe("web fetch Accept header", () => {
       });
 
       expect(requestHeaders.get("accept")).toBe(`${preferred},${STRUCTURED_TEXT_ACCEPT_FALLBACK}`);
-      expect(requestHeaders.get("user-agent")).toBe(
-        "pi-web-engine/0.1.1 (+https://github.com/WolfieLeader/pi-web-engine)",
-      );
+      expect(requestHeaders.get("user-agent")).toBe(DEFAULT_USER_AGENT);
     },
   );
+
+  it("uses a complete configured User-Agent value", async () => {
+    let requestHeaders = new Headers();
+    await fetchWebContent("https://example.com/resource", {
+      ...fetchOptions,
+      fetchImplementation(_input, init) {
+        requestHeaders = new Headers(init?.headers);
+        return Promise.resolve(textResponse("ok", "https://example.com/resource"));
+      },
+      userAgent: "OpenCode/1.0",
+    });
+
+    expect(requestHeaders.get("user-agent")).toBe("OpenCode/1.0");
+  });
 });
 
 describe("web fetch structured response", () => {
