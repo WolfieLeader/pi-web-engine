@@ -2,7 +2,7 @@
 
 Focused web access for [Pi](https://github.com/earendil-works/pi-mono): native OpenAI Codex search plus safe, readable web fetching.
 
-This first release intentionally starts small. It does not yet include Exa, Firecrawl, or Tavily.
+Version history is documented in the [changelog](CHANGELOG.md). This focused release does not include Exa, Firecrawl, or Tavily.
 
 ## Tools
 
