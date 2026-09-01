@@ -81,6 +81,11 @@ describe("readBoundedText", () => {
     await expect(readBoundedText(new Response("hello"), 5)).resolves.toBe("hello");
   });
 
+  it("decodes the declared legacy text encoding", async () => {
+    const response = new Response(Uint8Array.of(0x63, 0x61, 0x66, 0xe9));
+    await expect(readBoundedText(response, 4, "windows-1252")).resolves.toBe("café");
+  });
+
   it("rejects text over the configured limit and cancels the stream", async () => {
     let canceled = false;
     const stream = new ReadableStream<Uint8Array>({

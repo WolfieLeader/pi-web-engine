@@ -8,12 +8,13 @@ This first release intentionally starts small. It does not yet include Exa, Fire
 
 ### `web_search`
 
-Uses the active OpenAI Codex GPT-5.6 model and its existing Pi OAuth session to call OpenAI's native `web_search` Responses API tool. It returns a grounded answer and source URLs.
+Uses the active OpenAI Codex GPT-5.6 model and its existing Pi OAuth session to call Codex's native standalone search endpoint. It returns search evidence and source URLs for the active model to use in its answer.
 
 - Credentials are resolved through Pi; no second API key is required.
 - Codex credentials are sent only to the official `https://chatgpt.com/backend-api` endpoint.
 - Optional `allowed_domains` filters narrow the native search.
 - For the MVP, requires `gpt-5.6-luna`, `gpt-5.6-sol`, or `gpt-5.6-terra` on the official `openai-codex` provider.
+- The request contract follows the official Codex CLI's [standalone web-search extension](https://github.com/openai/codex/tree/main/codex-rs/ext/web-search) and `codex/alpha/search` endpoint. Because that endpoint is explicitly alpha, releases should retain contract tests and be verified against a live Codex session.
 
 ### `web_fetch`
 
@@ -58,7 +59,7 @@ Then select `gpt-5.6-luna`, `gpt-5.6-sol`, or `gpt-5.6-terra` with `/model`. Pi'
 
 ## Development
 
-The project uses TypeScript 7, pnpm 11, OXC, Knip, Vitest, Zod 4, and tsdown. Oxlint runs type-aware linting, experimental type-check diagnostics, strict correctness/pedantic/performance/suspicious categories, and the vendored [anti-slop](https://github.com/dmmulroy/anti-slop) ruleset.
+The project uses TypeScript 7, pnpm 11, OXC, Knip, Vitest, TypeBox, and tsdown. Oxlint runs type-aware linting, experimental type-check diagnostics, strict correctness/pedantic/performance/suspicious categories, and the vendored [anti-slop](https://github.com/dmmulroy/anti-slop) ruleset. Anti-slop is vendored intentionally, as required by its upstream installation guidance; it is development-only and excluded from the published npm package.
 
 ```sh
 pnpm install
@@ -66,7 +67,7 @@ pnpm check
 pnpm build
 ```
 
-Pi currently requires TypeBox schemas at the extension tool boundary. The extension therefore uses Pi's bundled TypeBox-compatible `Type`/`StringEnum` helpers for tool parameters and Zod for untrusted provider response validation.
+Pi requires TypeBox schemas at the extension tool boundary and provides TypeBox to installed extensions. The extension reuses that peer dependency for both tool parameters and untrusted provider response validation.
 
 ## Roadmap
 

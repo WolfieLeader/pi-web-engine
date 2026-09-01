@@ -55,14 +55,17 @@ export async function fetchPublicUrl(input: string, init: RequestInit): Promise<
       throw new Error(`Too many redirects fetching ${input}`);
     }
 
+    const previousOrigin = url.origin;
     try {
       url = parsePublicHttpUrl(new URL(location, url)).url;
     } finally {
       await cancelResponseBody(response);
     }
+    if (url.origin !== previousOrigin) request = removeSensitiveHeaders(request);
+    const method = (request.method ?? "GET").toUpperCase();
     if (
-      response.status === 303 ||
-      ((response.status === 301 || response.status === 302) && request.method === "POST")
+      (response.status === 303 && method !== "HEAD") ||
+      ((response.status === 301 || response.status === 302) && method === "POST")
     ) {
       const { body: _body, ...withoutBody } = request;
       request = { ...withoutBody, method: "GET" };
@@ -75,6 +78,7 @@ export async function fetchPublicUrl(input: string, init: RequestInit): Promise<
 export async function readBoundedText(
   response: Response,
   maximumBytes = MAX_RESPONSE_BYTES,
+  encoding = "utf-8",
 ): Promise<string> {
   if (response.body === null) return "";
 
@@ -103,7 +107,7 @@ export async function readBoundedText(
     body.set(chunk, offset);
     offset += chunk.byteLength;
   }
-  return new TextDecoder().decode(body);
+  return new TextDecoder(encoding).decode(body);
 }
 
 export function createGuardedLookup(lookup: HostLookup = defaultLookup): SocketLookup {
@@ -215,6 +219,15 @@ function normalizeFamily(family: number | "IPv4" | "IPv6" | undefined): IpFamily
   if (family === 4 || family === "IPv4") normalized = 4;
   if (family === 6 || family === "IPv6") normalized = 6;
   return normalized;
+}
+
+function removeSensitiveHeaders(request: RequestInit): RequestInit {
+  if (request.headers === undefined) return request;
+  const headers = new Headers(request.headers);
+  headers.delete("authorization");
+  headers.delete("cookie");
+  headers.delete("proxy-authorization");
+  return { ...request, headers };
 }
 
 async function cancelResponseBody(response: Response): Promise<void> {

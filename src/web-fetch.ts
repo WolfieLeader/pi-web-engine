@@ -29,6 +29,7 @@ interface ConvertedContent {
 }
 
 const MILLISECONDS_PER_SECOND = 1_000;
+const MAX_TITLE_LENGTH = 500;
 const turndown = new TurndownService({
   codeBlockStyle: "fenced",
   headingStyle: "atx",
@@ -45,7 +46,7 @@ export async function fetchWebContent(
     headers: {
       Accept: acceptHeader(options.format),
       "Accept-Language": "en-US,en;q=0.9",
-      "User-Agent": "pi-web-engine/0.0.2 (+https://github.com/WolfieLeader/pi-web-engine)",
+      "User-Agent": "pi-web-engine (+https://github.com/WolfieLeader/pi-web-engine)",
     },
     signal,
   });
@@ -61,7 +62,7 @@ export async function fetchWebContent(
     await cancelResponseBody(response);
     throw error;
   }
-  const body = await readBoundedText(response);
+  const body = await readBoundedText(response, undefined, charsetFromContentType(contentType));
   const finalUrl = response.url.length > 0 ? response.url : url;
   const converted = convertContent(body, contentType, options.format, finalUrl);
   const truncation = truncateHead(converted.content);
@@ -76,7 +77,7 @@ export async function fetchWebContent(
     format: options.format,
     truncated: truncation.truncated,
   };
-  if (converted.title !== undefined) details.title = converted.title;
+  if (converted.title !== undefined) details.title = converted.title.slice(0, MAX_TITLE_LENGTH);
   return {
     content: [{ type: "text", text: output }],
     details,
@@ -89,7 +90,7 @@ export function convertContent(
   format: FetchFormat,
   url: string,
 ): ConvertedContent {
-  if (!contentType.toLowerCase().includes("text/html")) return { content: body };
+  if (mimeFromContentType(contentType) !== "text/html") return { content: body };
   if (format === "html") return { content: body };
 
   const { document } = parseHTML(body);
@@ -130,8 +131,23 @@ async function cancelResponseBody(response: Response): Promise<void> {
   await response.body.cancel().catch(() => null);
 }
 
+function charsetFromContentType(contentType: string): string {
+  const match = /(?:^|;)\s*charset\s*=\s*["']?([^;"'\s]+)/iu.exec(contentType);
+  const charset = match?.[1] ?? "utf-8";
+  try {
+    const decoder = new TextDecoder(charset);
+    return decoder.encoding;
+  } catch {
+    return "utf-8";
+  }
+}
+
+function mimeFromContentType(contentType: string): string {
+  return contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+}
+
 function assertTextContentType(contentType: string): void {
-  const mime = contentType.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+  const mime = mimeFromContentType(contentType);
   if (
     mime.length === 0 ||
     mime.startsWith("text/") ||

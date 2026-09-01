@@ -1,21 +1,28 @@
-import type { Api, Model, ProviderHeaders } from "@earendil-works/pi-ai";
+import type { Api, Model } from "@earendil-works/pi-ai";
 import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateHead } from "@earendil-works/pi-coding-agent";
-import { parseResponseStream, readCodexErrorBody } from "./codex-stream.js";
+import { Check, Parse } from "typebox/value";
+import { searchResponseSchema, sourceSchema, type SourceCandidate } from "./codex-schemas.js";
 import {
-  jwtPayloadSchema,
-  messageItemSchema,
-  webSearchItemSchema,
-  type SourceCandidate,
-} from "./codex-schemas.js";
+  createCodexHeaders,
+  createSearchRequestBody,
+  redactSensitiveText,
+} from "./codex-request.js";
+import { readBoundedText } from "./network.js";
 
-const CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
+const CODEX_SEARCH_URL = "https://chatgpt.com/backend-api/codex/alpha/search";
 const SEARCH_TIMEOUT_MS = 60_000;
-const MAX_ALLOWED_DOMAINS = 100;
 const MAX_ERROR_BODY_LENGTH = 500;
+const MAX_ERROR_RESPONSE_BYTES = 64 * 1024;
+const MAX_SEARCH_RESPONSE_BYTES = 4 * 1024 * 1024;
+const MAX_SOURCE_REFERENCE_LENGTH = 100;
+const MAX_SOURCE_TITLE_LENGTH = 500;
+const MAX_SOURCE_URL_LENGTH = 8_192;
 const MAX_SOURCES = 100;
+const SUPPORTED_MODELS = new Set(["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]);
 
 interface SearchSource {
+  readonly refId?: string;
   readonly title: string;
   readonly url: string;
 }
@@ -32,11 +39,6 @@ interface SearchOptions {
   readonly signal: AbortSignal | undefined;
 }
 
-interface WebSearchTool {
-  readonly type: "web_search";
-  filters?: { readonly allowed_domains: readonly string[] };
-}
-
 type PiModel = NonNullable<ExtensionContext["model"]>;
 
 export async function searchWithCodex(
@@ -51,37 +53,26 @@ export async function searchWithCodex(
     throw new Error("Codex authentication failed: no OAuth token is available");
   }
 
-  const headers = createHeaders(model.headers, auth.headers, auth.apiKey);
+  const headers = createCodexHeaders(model.headers, auth.headers, auth.apiKey);
   const signal = combineSignal(options.signal);
-  const response = await fetch(CODEX_RESPONSES_URL, {
-    body: JSON.stringify(createRequestBody(model.id, query, options.allowedDomains)),
+  const response = await fetch(CODEX_SEARCH_URL, {
+    body: JSON.stringify(
+      createSearchRequestBody(
+        context.sessionManager.getSessionId(),
+        model.id,
+        query,
+        options.allowedDomains,
+      ),
+    ),
     headers,
     method: "POST",
     signal,
   });
   if (!response.ok) await throwResponseError(response, auth.apiKey);
 
-  const payload = await parseResponseStream(response);
-  const output = payload.output ?? [];
-  if (!output.some((item) => webSearchItemSchema.safeParse(item).success)) {
-    throw new Error("Codex returned no native web_search call");
-  }
-  return formatSearchResult(model.id, query, output);
-}
-
-export function normalizeDomains(domains: readonly string[] | undefined): string[] {
-  if (domains === undefined) return [];
-  const normalized = new Set<string>();
-  for (const input of domains) {
-    try {
-      const url = new URL(input.includes("://") ? input : `https://${input}`);
-      const hostname = url.hostname.toLowerCase().replace(/\.$/u, "");
-      if (hostname.length > 0 && !hostname.includes("..")) normalized.add(hostname);
-    } catch {
-      // Invalid optional filters are omitted rather than weakening the request.
-    }
-  }
-  return [...normalized].slice(0, MAX_ALLOWED_DOMAINS);
+  const decoded: unknown = JSON.parse(await readBoundedText(response, MAX_SEARCH_RESPONSE_BYTES));
+  const payload = Parse(searchResponseSchema, decoded);
+  return formatSearchResult(model.id, query, payload.output, payload.results ?? []);
 }
 
 function resolveModel(context: ExtensionContext): Model<Api> {
@@ -97,65 +88,27 @@ function assertOfficialCodexModel(model: PiModel | undefined): asserts model is 
     model === undefined ||
     model.provider !== "openai-codex" ||
     model.api !== "openai-codex-responses" ||
-    !/^gpt-5\.6(?:-|$)/u.test(model.id)
+    !SUPPORTED_MODELS.has(model.id)
   ) {
     throw new Error(
-      "Native web_search MVP requires an active OpenAI Codex GPT-5.6 model. Use /login and /model to select gpt-5.6-luna, gpt-5.6-sol, or gpt-5.6-terra.",
+      "Native web_search requires an active OpenAI Codex GPT-5.6 model. Use /login and /model to select gpt-5.6-luna, gpt-5.6-sol, or gpt-5.6-terra.",
     );
   }
   const baseUrl = new URL(model.baseUrl);
   if (
     baseUrl.protocol !== "https:" ||
     baseUrl.hostname !== "chatgpt.com" ||
-    baseUrl.pathname.replace(/\/+$/u, "") !== "/backend-api"
+    baseUrl.port.length > 0 ||
+    baseUrl.username.length > 0 ||
+    baseUrl.password.length > 0 ||
+    baseUrl.pathname.replace(/\/+$/u, "") !== "/backend-api" ||
+    baseUrl.search.length > 0 ||
+    baseUrl.hash.length > 0
   ) {
     throw new Error(
       "Native web_search only sends Codex credentials to the official ChatGPT endpoint",
     );
   }
-}
-
-function createHeaders(
-  modelHeaders: ProviderHeaders | undefined,
-  authHeaders: ProviderHeaders | undefined,
-  apiKey: string,
-): Headers {
-  const headers = new Headers();
-  for (const [name, value] of Object.entries(modelHeaders ?? {})) {
-    if (value !== null) headers.set(name, value);
-  }
-  for (const [name, value] of Object.entries(authHeaders ?? {})) {
-    if (value !== null) headers.set(name, value);
-  }
-  headers.set("Authorization", `Bearer ${apiKey}`);
-  headers.set("Content-Type", "application/json");
-  headers.set("Accept", "text/event-stream");
-  if (!headers.has("chatgpt-account-id")) {
-    const accountId = extractAccountId(apiKey);
-    if (accountId !== undefined) headers.set("chatgpt-account-id", accountId);
-  }
-  if (!headers.has("originator")) headers.set("originator", "pi");
-  return headers;
-}
-
-function createRequestBody(model: string, query: string, domains: readonly string[] | undefined) {
-  const allowedDomains = normalizeDomains(domains);
-  const webSearchTool: WebSearchTool = { type: "web_search" };
-  if (allowedDomains.length > 0) {
-    webSearchTool.filters = { allowed_domains: allowedDomains };
-  }
-  return {
-    include: ["web_search_call.action.sources"],
-    input: [{ content: [{ text: query, type: "input_text" }], role: "user" }],
-    instructions:
-      "Search the web and answer concisely using only retrieved evidence. Include citations.",
-    model,
-    parallel_tool_calls: true,
-    store: false,
-    stream: true,
-    tool_choice: "required",
-    tools: [webSearchTool],
-  };
 }
 
 function combineSignal(signal: AbortSignal | undefined): AbortSignal {
@@ -164,78 +117,77 @@ function combineSignal(signal: AbortSignal | undefined): AbortSignal {
 }
 
 async function throwResponseError(response: Response, apiKey: string): Promise<never> {
-  const message = redactToken(
-    (await readCodexErrorBody(response)).slice(0, MAX_ERROR_BODY_LENGTH),
-    apiKey,
-  );
+  let body: string;
+  try {
+    body = await readBoundedText(response, MAX_ERROR_RESPONSE_BYTES);
+  } catch (error) {
+    body = `[response body unavailable: ${errorMessage(error)}]`;
+  }
+  const message = redactSensitiveText(body, apiKey).slice(0, MAX_ERROR_BODY_LENGTH);
   throw new Error(`Codex web search failed (HTTP ${response.status}): ${message}`);
 }
 
-function formatSearchResult(
+export function formatSearchResult(
   model: string,
   query: string,
-  output: readonly unknown[],
+  output: string,
+  results: readonly unknown[],
 ): AgentToolResult<WebSearchDetails> {
-  const answer = extractAnswer(output);
-  const sources = extractSources(output);
-  if (answer.length === 0 && sources.length === 0) {
-    throw new Error("Codex web search returned no answer or sources");
-  }
-  const rendered = [answer, renderSources(sources)].filter((part) => part.length > 0).join("\n\n");
+  const sources = extractSources(results);
+  const rendered = [output.trim(), renderSources(sources)]
+    .filter((part) => part.length > 0)
+    .join("\n\n");
+  if (rendered.length === 0) throw new Error("Codex web search returned no results");
   const truncation = truncateHead(rendered);
+  let content = truncation.content;
+  if (truncation.truncated) {
+    content += `\n\n[Output truncated: ${truncation.outputLines} of ${truncation.totalLines} lines, ${truncation.outputBytes} of ${truncation.totalBytes} bytes.]`;
+  }
   return {
-    content: [{ text: truncation.content, type: "text" }],
+    content: [{ text: content, type: "text" }],
     details: { model, query, sources, truncated: truncation.truncated },
   };
 }
 
-function extractAnswer(output: readonly unknown[]): string {
-  const text: string[] = [];
-  for (const item of output) {
-    const message = messageItemSchema.safeParse(item);
-    if (!message.success) continue;
-    for (const part of message.data.content) {
-      if (part.text !== undefined && part.text.trim().length > 0) text.push(part.text.trim());
-    }
-  }
-  return text.join("\n");
-}
-
-function extractSources(output: readonly unknown[]): SearchSource[] {
+function extractSources(results: readonly unknown[]): SearchSource[] {
   const sources = new Map<string, SearchSource>();
-  for (const item of output) {
-    const message = messageItemSchema.safeParse(item);
-    if (message.success) {
-      for (const part of message.data.content) {
-        for (const candidate of part.annotations ?? []) addSource(sources, candidate);
-      }
-    }
-    const search = webSearchItemSchema.safeParse(item);
-    if (search.success) {
-      for (const candidate of search.data.action?.sources ?? []) addSource(sources, candidate);
-      for (const candidate of search.data.sources ?? []) addSource(sources, candidate);
-    }
+  for (const result of results) {
+    if (!Check(sourceSchema, result)) continue;
+    addSource(sources, result);
   }
   return [...sources.values()].slice(0, MAX_SOURCES);
 }
 
 function addSource(sources: Map<string, SearchSource>, candidate: SourceCandidate): void {
-  if (!URL.canParse(candidate.url)) return;
+  if (candidate.url.length > MAX_SOURCE_URL_LENGTH || !URL.canParse(candidate.url)) return;
   const parsedUrl = new URL(candidate.url);
-  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") return;
+  if (
+    (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") ||
+    parsedUrl.username.length > 0 ||
+    parsedUrl.password.length > 0
+  ) {
+    return;
+  }
   const url = removeTracking(parsedUrl);
   if (sources.has(url)) return;
   const candidateTitle = candidate.title ?? candidate.caption;
-  const title =
-    candidateTitle === undefined || candidateTitle.trim().length === 0
-      ? url
-      : candidateTitle.trim();
-  sources.set(url, { title, url });
+  const title = cleanSourceTitle(candidateTitle, url);
+  const refId = candidate.ref_id?.trim().slice(0, MAX_SOURCE_REFERENCE_LENGTH);
+  sources.set(
+    url,
+    refId === undefined || refId.length === 0 ? { title, url } : { refId, title, url },
+  );
+}
+
+function cleanSourceTitle(title: string | undefined, fallback: string): string {
+  if (title === undefined) return fallback;
+  const cleaned = title.replaceAll(/\s+/gu, " ").trim();
+  return cleaned.length === 0 ? fallback : cleaned.slice(0, MAX_SOURCE_TITLE_LENGTH);
 }
 
 function renderSources(sources: readonly SearchSource[]): string {
   if (sources.length === 0) return "";
-  return `## Sources\n${sources.map((source, index) => `${index + 1}. [${escapeMarkdown(source.title)}](${source.url})`).join("\n")}`;
+  return `## Sources\n${sources.map((source, index) => `${index + 1}. ${source.refId === undefined ? "" : `\`${escapeCode(source.refId)}\` `}[${escapeMarkdown(source.title)}](<${source.url}>)`).join("\n")}`;
 }
 
 function removeTracking(input: URL): string {
@@ -250,20 +202,10 @@ function escapeMarkdown(input: string): string {
   return input.replaceAll("\\", "\\\\").replaceAll("[", "\\[").replaceAll("]", "\\]");
 }
 
-function extractAccountId(token: string): string | undefined {
-  const payload = token.split(".")[1];
-  if (payload === undefined) return undefined;
-  try {
-    const decoded: unknown = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    const parsed = jwtPayloadSchema.safeParse(decoded);
-    return parsed.success
-      ? parsed.data["https://api.openai.com/auth"]?.chatgpt_account_id
-      : undefined;
-  } catch {
-    return undefined;
-  }
+function escapeCode(input: string): string {
+  return input.replaceAll("`", "\\`");
 }
 
-function redactToken(message: string, token: string): string {
-  return message.replaceAll(token, "[redacted]");
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
 }

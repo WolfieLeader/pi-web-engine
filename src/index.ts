@@ -52,7 +52,7 @@ const webSearchTool = defineTool<typeof webSearchParameters, WebSearchDetails>({
   name: "web_search",
   label: "Web Search",
   description:
-    "Search the live web with OpenAI Codex's native web_search tool and return a cited answer. " +
+    "Search the live web with OpenAI Codex's native standalone search endpoint and return search evidence with source URLs. " +
     "Requires an active official OpenAI Codex GPT-5.6 model. Output is limited to 50KB or 2,000 lines.",
   promptSnippet: "Search the live web through the active OpenAI Codex model",
   promptGuidelines: [
