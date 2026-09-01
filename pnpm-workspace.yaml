@@ -1,0 +1,6 @@
+allowBuilds:
+  "@google/genai": false
+  protobufjs: false
+strictPeerDependencies: true
+minimumReleaseAgeExclude:
+  - knip@6.34.0

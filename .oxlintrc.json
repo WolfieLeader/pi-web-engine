@@ -1,0 +1,35 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error",
+    "perf": "error",
+    "suspicious": "error"
+  },
+  "plugins": ["eslint", "typescript", "unicorn", "oxc"],
+  "rules": {
+    "eqeqeq": "error",
+    "no-console": "error",
+    "no-else-return": "error",
+    "no-implicit-coercion": "error",
+    "no-await-in-loop": "off",
+    "no-param-reassign": "error",
+    "no-throw-literal": "error",
+    "prefer-const": "error",
+    "typescript/consistent-type-imports": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-floating-promises": "error",
+    "typescript/no-misused-promises": "error",
+    "typescript/no-unnecessary-type-assertion": "error",
+    "typescript/no-unsafe-argument": "error",
+    "typescript/no-unsafe-assignment": "error",
+    "typescript/no-unsafe-call": "error",
+    "typescript/no-unsafe-member-access": "error",
+    "typescript/no-unsafe-return": "error",
+    "typescript/restrict-template-expressions": "error",
+    "unicorn/error-message": "error",
+    "unicorn/no-array-callback-reference": "error",
+    "unicorn/no-null": "off",
+    "unicorn/prefer-node-protocol": "error"
+  },
+  "ignorePatterns": ["dist/**", "coverage/**"]
+}
