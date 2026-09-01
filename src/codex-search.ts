@@ -19,7 +19,6 @@ const MAX_SOURCE_REFERENCE_LENGTH = 100;
 const MAX_SOURCE_TITLE_LENGTH = 500;
 const MAX_SOURCE_URL_LENGTH = 8_192;
 const MAX_SOURCES = 100;
-const SUPPORTED_MODELS = new Set(["gpt-5.6-luna", "gpt-5.6-sol", "gpt-5.6-terra"]);
 
 interface SearchSource {
   readonly refId?: string;
@@ -54,24 +53,15 @@ export async function searchWithCodex(
   }
 
   const headers = createCodexHeaders(model.headers, auth.headers, auth.apiKey);
-  const signal = combineSignal(options.signal);
-  const response = await fetch(CODEX_SEARCH_URL, {
-    body: JSON.stringify(
-      createSearchRequestBody(
-        context.sessionManager.getSessionId(),
-        model.id,
-        query,
-        options.allowedDomains,
-      ),
-    ),
+  const payload = await requestCodexSearch(
+    context.sessionManager.getSessionId(),
+    model.id,
+    query,
+    options.allowedDomains,
     headers,
-    method: "POST",
-    signal,
-  });
-  if (!response.ok) await throwResponseError(response, auth.apiKey);
-
-  const decoded: unknown = JSON.parse(await readBoundedText(response, MAX_SEARCH_RESPONSE_BYTES));
-  const payload = Parse(searchResponseSchema, decoded);
+    auth.apiKey,
+    combineSignal(options.signal),
+  );
   return formatSearchResult(model.id, query, payload.output, payload.results ?? []);
 }
 
@@ -83,15 +73,14 @@ function resolveModel(context: ExtensionContext): Model<Api> {
   return model;
 }
 
-function assertOfficialCodexModel(model: PiModel | undefined): asserts model is PiModel {
+export function assertOfficialCodexModel(model: PiModel | undefined): asserts model is PiModel {
   if (
     model === undefined ||
     model.provider !== "openai-codex" ||
-    model.api !== "openai-codex-responses" ||
-    !SUPPORTED_MODELS.has(model.id)
+    model.api !== "openai-codex-responses"
   ) {
     throw new Error(
-      "Native web_search requires an active OpenAI Codex GPT-5.6 model. Use /login and /model to select gpt-5.6-luna, gpt-5.6-sol, or gpt-5.6-terra.",
+      "Native web_search requires an active model from Pi's official OpenAI Codex provider. Use /login and /model to select one.",
     );
   }
   const baseUrl = new URL(model.baseUrl);
@@ -109,6 +98,28 @@ function assertOfficialCodexModel(model: PiModel | undefined): asserts model is 
       "Native web_search only sends Codex credentials to the official ChatGPT endpoint",
     );
   }
+}
+
+export async function requestCodexSearch(
+  id: string,
+  model: string,
+  query: string,
+  allowedDomains: readonly string[] | undefined,
+  headers: Headers,
+  apiKey: string,
+  signal: AbortSignal,
+  fetchImplementation: typeof fetch = fetch,
+) {
+  const response = await fetchImplementation(CODEX_SEARCH_URL, {
+    body: JSON.stringify(createSearchRequestBody(id, model, query, allowedDomains)),
+    headers,
+    method: "POST",
+    signal,
+  });
+  if (!response.ok) await throwResponseError(response, apiKey);
+
+  const decoded: unknown = JSON.parse(await readBoundedText(response, MAX_SEARCH_RESPONSE_BYTES));
+  return Parse(searchResponseSchema, decoded);
 }
 
 function combineSignal(signal: AbortSignal | undefined): AbortSignal {

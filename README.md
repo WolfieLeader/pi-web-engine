@@ -8,12 +8,12 @@ This first release intentionally starts small. It does not yet include Exa, Fire
 
 ### `web_search`
 
-Uses the active OpenAI Codex GPT-5.6 model and its existing Pi OAuth session to call Codex's native standalone search endpoint. It returns search evidence and source URLs for the active model to use in its answer.
+Uses the active model from Pi's official OpenAI Codex provider and its existing OAuth session to call Codex's native standalone search endpoint. It returns search evidence and source URLs for the active model to use in its answer.
 
 - Credentials are resolved through Pi; no second API key is required.
 - Codex credentials are sent only to the official `https://chatgpt.com/backend-api` endpoint.
 - Optional `allowed_domains` filters narrow the native search.
-- For the MVP, requires `gpt-5.6-luna`, `gpt-5.6-sol`, or `gpt-5.6-terra` on the official `openai-codex` provider.
+- Follows the Codex CLI's provider-level capability check rather than maintaining a model-name allowlist.
 - The request contract follows the official Codex CLI's [standalone web-search extension](https://github.com/openai/codex/tree/main/codex-rs/ext/web-search) and `codex/alpha/search` endpoint. Because that endpoint is explicitly alpha, releases should retain contract tests and be verified against a live Codex session.
 
 ### `web_fetch`
@@ -32,7 +32,7 @@ Fetches a public HTTP(S) URL and returns `markdown` (default), `text`, or `html`
 
 - Node.js 24.11 or newer
 - Pi 0.84.4 or newer
-- An OpenAI Codex login and a GPT-5.6 Codex model for `web_search`
+- An OpenAI Codex login and a model from Pi's official `openai-codex` provider for `web_search`
 
 ## Install
 
@@ -55,7 +55,7 @@ pnpm install
 pi -e ./src/index.ts
 ```
 
-Then select `gpt-5.6-luna`, `gpt-5.6-sol`, or `gpt-5.6-terra` with `/model`. Pi's `/login` command can create the required Codex session.
+Then select a model from the official `openai-codex` provider with `/model`. Pi's `/login` command can create the required Codex session.
 
 ## Development
 

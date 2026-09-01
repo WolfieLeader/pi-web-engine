@@ -1,3 +1,4 @@
+import type { Model } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import {
   createCodexHeaders,
@@ -5,7 +6,11 @@ import {
   normalizeDomains,
   redactSensitiveText,
 } from "../src/codex-request.js";
-import { formatSearchResult } from "../src/codex-search.js";
+import {
+  assertOfficialCodexModel,
+  formatSearchResult,
+  requestCodexSearch,
+} from "../src/codex-search.js";
 
 describe("normalizeDomains", () => {
   it("normalizes and deduplicates host filters", () => {
@@ -35,6 +40,25 @@ describe("normalizeDomains", () => {
   });
 });
 
+describe("official Codex model validation", () => {
+  it.each(["gpt-5.3-codex-spark", "gpt-5.4", "gpt-5.5", "gpt-5.6-luna"])(
+    "accepts official provider model %s without a model-name allowlist",
+    (modelId) => {
+      expect(() => {
+        assertOfficialCodexModel(createCodexModel(modelId));
+      }).not.toThrow();
+    },
+  );
+
+  it("rejects a non-official endpoint", () => {
+    const model = createCodexModel("gpt-5.5");
+    model.baseUrl = "https://example.com/backend-api";
+    expect(() => {
+      assertOfficialCodexModel(model);
+    }).toThrow("official ChatGPT endpoint");
+  });
+});
+
 describe("Codex standalone search request body", () => {
   it("matches the official Codex alpha search contract", () => {
     expect(
@@ -54,6 +78,79 @@ describe("Codex standalone search request body", () => {
         filters: { allowed_domains: ["openai.com"] },
       },
     });
+  });
+});
+
+describe("Codex standalone search transport", () => {
+  it("posts to the official endpoint and preserves opaque result fields", async () => {
+    const payload = await runSearchRequest((input, init) => {
+      expect(input).toBe("https://chatgpt.com/backend-api/codex/alpha/search");
+      expect(init?.method).toBe("POST");
+      expect(init?.body).toBe(
+        JSON.stringify(
+          createSearchRequestBody("session-id", "gpt-5.4", "official Codex tests", []),
+        ),
+      );
+      return Promise.resolve(
+        Response.json({
+          encrypted_output: "ciphertext",
+          output: "search result",
+          results: [
+            {
+              future_field: { preserved: true },
+              ref_id: "turn0search0",
+              type: "text_result",
+              url: "https://example.com/result",
+            },
+          ],
+        }),
+      );
+    });
+
+    expect(payload.output).toBe("search result");
+    expect(payload.results).toEqual([
+      {
+        future_field: { preserved: true },
+        ref_id: "turn0search0",
+        type: "text_result",
+        url: "https://example.com/result",
+      },
+    ]);
+  });
+
+  it("accepts older responses without structured results", async () => {
+    const payload = await runSearchRequest(() =>
+      Promise.resolve(Response.json({ encrypted_output: null, output: "search result" })),
+    );
+    expect(payload.results).toBeUndefined();
+  });
+});
+
+describe("Codex standalone search response validation", () => {
+  it("preserves supported empty structured results", async () => {
+    const payload = await runSearchRequest(() =>
+      Promise.resolve(
+        Response.json({ encrypted_output: null, output: "search result", results: [] }),
+      ),
+    );
+    expect(payload.results).toEqual([]);
+  });
+
+  it("rejects malformed and oversized responses", async () => {
+    await expect(
+      runSearchRequest(() =>
+        Promise.resolve(Response.json({ encrypted_output: null, output: "result", results: {} })),
+      ),
+    ).rejects.toThrow("Parse");
+    await expect(
+      runSearchRequest(() => Promise.resolve(new Response("x".repeat(4 * 1024 * 1024 + 1)))),
+    ).rejects.toThrow("Response too large");
+  });
+
+  it("redacts reflected credentials in provider errors", async () => {
+    await expect(
+      runSearchRequest(() => Promise.resolve(new Response("rejected test-token", { status: 401 }))),
+    ).rejects.toThrow("rejected [redacted]");
   });
 });
 
@@ -104,6 +201,34 @@ describe("Codex standalone search results", () => {
     expect(result.details.sources).toHaveLength(1);
   });
 });
+
+function createCodexModel(id: string): Model<"openai-codex-responses"> {
+  return {
+    api: "openai-codex-responses",
+    baseUrl: "https://chatgpt.com/backend-api",
+    contextWindow: 128_000,
+    cost: { cacheRead: 0, cacheWrite: 0, input: 0, output: 0 },
+    id,
+    input: ["text"],
+    maxTokens: 128_000,
+    name: id,
+    provider: "openai-codex",
+    reasoning: true,
+  };
+}
+
+function runSearchRequest(fetchImplementation: typeof fetch) {
+  return requestCodexSearch(
+    "session-id",
+    "gpt-5.4",
+    "official Codex tests",
+    undefined,
+    new Headers(),
+    "test-token",
+    new AbortController().signal,
+    fetchImplementation,
+  );
+}
 
 function searchResultText(result: ReturnType<typeof formatSearchResult>): string {
   const content = result.content[0];

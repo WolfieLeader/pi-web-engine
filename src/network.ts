@@ -35,7 +35,11 @@ export async function assertPublicHttpUrl(
   return url;
 }
 
-export async function fetchPublicUrl(input: string, init: RequestInit): Promise<Response> {
+export async function fetchPublicUrl(
+  input: string,
+  init: RequestInit,
+  fetchImplementation: typeof fetch = fetch,
+): Promise<Response> {
   let url = parsePublicHttpUrl(input).url;
   let request = init;
 
@@ -45,7 +49,7 @@ export async function fetchPublicUrl(input: string, init: RequestInit): Promise<
       dispatcher: publicNetworkAgent,
       redirect: "manual" as const,
     };
-    const response = await fetch(url, secureRequest);
+    const response = await fetchImplementation(url, secureRequest);
     if (!REDIRECT_STATUSES.has(response.status)) return response;
 
     const location = response.headers.get("location");
