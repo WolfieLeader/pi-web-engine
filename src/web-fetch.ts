@@ -45,7 +45,7 @@ export async function fetchWebContent(
     headers: {
       Accept: acceptHeader(options.format),
       "Accept-Language": "en-US,en;q=0.9",
-      "User-Agent": "pi-websearch/0.0.1 (+https://github.com/WolfieLeader/pi-websearch)",
+      "User-Agent": "pi-web-engine/0.0.1 (+https://github.com/WolfieLeader/pi-web-engine)",
     },
     signal,
   });

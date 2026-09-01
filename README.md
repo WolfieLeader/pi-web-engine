@@ -1,4 +1,4 @@
-# pi-web-search
+# pi-web-engine
 
 Focused web access for [Pi](https://github.com/earendil-works/pi-mono): native OpenAI Codex search plus safe, readable web fetching.
 
@@ -38,13 +38,13 @@ Fetches a public HTTP(S) URL and returns `markdown` (default), `text`, or `html`
 From npm:
 
 ```sh
-pi install npm:pi-websearch
+pi install npm:pi-web-engine
 ```
 
 Or directly from GitHub:
 
 ```sh
-pi install git:github.com/WolfieLeader/pi-websearch
+pi install git:github.com/WolfieLeader/pi-web-engine
 ```
 
 For local development:

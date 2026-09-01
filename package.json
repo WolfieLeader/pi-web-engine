@@ -1,5 +1,5 @@
 {
-  "name": "pi-websearch",
+  "name": "pi-web-engine",
   "version": "0.0.1",
   "description": "Native OpenAI Codex web search and secure web fetching for Pi",
   "keywords": [
@@ -10,15 +10,15 @@
     "web-fetch",
     "web-search"
   ],
-  "homepage": "https://github.com/WolfieLeader/pi-websearch#readme",
+  "homepage": "https://github.com/WolfieLeader/pi-web-engine#readme",
   "bugs": {
-    "url": "https://github.com/WolfieLeader/pi-websearch/issues"
+    "url": "https://github.com/WolfieLeader/pi-web-engine/issues"
   },
   "license": "MIT",
   "author": "WolfieLeader",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/WolfieLeader/pi-websearch.git"
+    "url": "git+https://github.com/WolfieLeader/pi-web-engine.git"
   },
   "files": [
     "dist",
