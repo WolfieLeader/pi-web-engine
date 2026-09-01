@@ -45,14 +45,22 @@ export async function fetchWebContent(
     headers: {
       Accept: acceptHeader(options.format),
       "Accept-Language": "en-US,en;q=0.9",
-      "User-Agent": "pi-web-engine/0.0.1 (+https://github.com/WolfieLeader/pi-web-engine)",
+      "User-Agent": "pi-web-engine/0.0.2 (+https://github.com/WolfieLeader/pi-web-engine)",
     },
     signal,
   });
-  if (!response.ok) throw new Error(`HTTP ${response.status} ${response.statusText}`.trim());
+  if (!response.ok) {
+    await cancelResponseBody(response);
+    throw new Error(`HTTP ${response.status} ${response.statusText}`.trim());
+  }
 
   const contentType = response.headers.get("content-type") ?? "";
-  assertTextContentType(contentType);
+  try {
+    assertTextContentType(contentType);
+  } catch (error) {
+    await cancelResponseBody(response);
+    throw error;
+  }
   const body = await readBoundedText(response);
   const finalUrl = response.url.length > 0 ? response.url : url;
   const converted = convertContent(body, contentType, options.format, finalUrl);
@@ -115,6 +123,11 @@ function acceptHeader(format: FetchFormat): string {
   if (format === "html") return "text/html,application/xhtml+xml;q=0.9,text/plain;q=0.5";
   if (format === "text") return "text/plain,text/markdown;q=0.9,text/html;q=0.8";
   return "text/markdown,text/x-markdown;q=0.9,text/html;q=0.8,text/plain;q=0.7";
+}
+
+async function cancelResponseBody(response: Response): Promise<void> {
+  if (response.body === null) return;
+  await response.body.cancel().catch(() => null);
 }
 
 function assertTextContentType(contentType: string): void {

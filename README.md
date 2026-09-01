@@ -20,12 +20,12 @@ Uses the active OpenAI Codex GPT-5.6 model and its existing Pi OAuth session to 
 Fetches a public HTTP(S) URL and returns `markdown` (default), `text`, or `html`.
 
 - Extracts readable article content from HTML.
-- Blocks localhost, private/reserved IP addresses, URL credentials, non-HTTP schemes, and redirects to blocked targets.
+- Blocks localhost, private/reserved IP addresses, IPv4 transition addresses, URL credentials, non-HTTP schemes, and redirects to blocked targets.
 - Rejects non-text content and responses larger than 2 MB.
 - Truncates tool output to Pi's 50 KB / 2,000-line limit.
 
 > [!NOTE]
-> DNS preflight reduces accidental private-network access but is not a sandbox boundary. Pi extensions execute with the user's permissions; install only code you trust.
+> Hostnames are validated by the connector when it opens each socket, including after redirects, to prevent DNS rebinding into private networks. This is defense in depth, not a sandbox boundary: Pi extensions execute with the user's permissions, so install only code you trust.
 
 ## Requirements
 

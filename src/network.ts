@@ -1,65 +1,65 @@
 import { lookup as dnsLookup } from "node:dns/promises";
-import { isIP } from "node:net";
+import { isIP, type TcpNetConnectOpts } from "node:net";
+import ipaddr from "ipaddr.js";
+import { Agent } from "undici";
 
 const REDIRECT_STATUSES = new Set([301, 302, 303, 307, 308]);
 const MAX_REDIRECTS = 5;
+const MAX_NETWORK_ORIGINS = 32;
 
 const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
 
+type IpFamily = 4 | 6;
 type LookupAddress = Readonly<{ address: string; family: number }>;
+type SocketLookup = NonNullable<TcpNetConnectOpts["lookup"]>;
+interface ParsedHttpUrl {
+  readonly hostname: string;
+  readonly url: URL;
+}
 export type HostLookup = (hostname: string) => Promise<readonly LookupAddress[]>;
+
+const publicNetworkAgent = new Agent({
+  connect: { lookup: createGuardedLookup() },
+  maxOrigins: MAX_NETWORK_ORIGINS,
+});
 
 export async function assertPublicHttpUrl(
   input: string | URL,
   lookup: HostLookup = defaultLookup,
 ): Promise<URL> {
-  const url = input instanceof URL ? input : new URL(input);
-  if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw new Error("URL must use HTTP or HTTPS");
-  }
-  if (url.username.length > 0 || url.password.length > 0) {
-    throw new Error("URLs containing credentials are not allowed");
-  }
+  const { hostname, url } = parsePublicHttpUrl(input);
+  if (isIP(hostname) !== 0) return url;
 
-  const hostname = normalizeHostname(url.hostname);
-  if (hostname.length === 0) throw new Error("URL must include a hostname");
-  if (hostname === "localhost" || hostname.endsWith(".localhost")) {
-    throw new Error(`Blocked internal hostname: ${hostname}`);
-  }
-
-  if (isIP(hostname) !== 0) {
-    assertPublicIp(hostname, hostname);
-    return url;
-  }
-
-  let addresses: readonly LookupAddress[];
-  try {
-    addresses = await lookup(hostname);
-  } catch (error) {
-    throw new Error(`Failed to resolve ${hostname}: ${errorMessage(error)}`, { cause: error });
-  }
-  if (addresses.length === 0) throw new Error(`Failed to resolve ${hostname}: no addresses`);
+  const addresses = await resolveHost(hostname, lookup);
   for (const { address } of addresses) assertPublicIp(address, hostname);
   return url;
 }
 
-export async function fetchPublicUrl(
-  input: string,
-  init: RequestInit,
-  lookup?: HostLookup,
-): Promise<Response> {
-  let url = await assertPublicHttpUrl(input, lookup);
+export async function fetchPublicUrl(input: string, init: RequestInit): Promise<Response> {
+  let url = parsePublicHttpUrl(input).url;
   let request = init;
 
   for (let redirects = 0; redirects <= MAX_REDIRECTS; redirects += 1) {
-    const response = await fetch(url, { ...request, redirect: "manual" });
+    const secureRequest = {
+      ...request,
+      dispatcher: publicNetworkAgent,
+      redirect: "manual" as const,
+    };
+    const response = await fetch(url, secureRequest);
     if (!REDIRECT_STATUSES.has(response.status)) return response;
 
     const location = response.headers.get("location");
     if (location === null) return response;
-    if (redirects === MAX_REDIRECTS) throw new Error(`Too many redirects fetching ${input}`);
+    if (redirects === MAX_REDIRECTS) {
+      await cancelResponseBody(response);
+      throw new Error(`Too many redirects fetching ${input}`);
+    }
 
-    url = await assertPublicHttpUrl(new URL(location, url), lookup);
+    try {
+      url = parsePublicHttpUrl(new URL(location, url)).url;
+    } finally {
+      await cancelResponseBody(response);
+    }
     if (
       response.status === 303 ||
       ((response.status === 301 || response.status === 302) && request.method === "POST")
@@ -87,7 +87,9 @@ export async function readBoundedText(
       if (done) break;
       bytes += value.byteLength;
       if (bytes > maximumBytes) {
-        throw new Error(`Response too large (exceeds ${maximumBytes} bytes)`);
+        const error = new Error(`Response too large (exceeds ${maximumBytes} bytes)`);
+        await reader.cancel(error).catch(() => null);
+        throw error;
       }
       chunks.push(value);
     }
@@ -104,6 +106,80 @@ export async function readBoundedText(
   return new TextDecoder().decode(body);
 }
 
+export function createGuardedLookup(lookup: HostLookup = defaultLookup): SocketLookup {
+  return (hostname, options, callback) => {
+    void performGuardedLookup(hostname, options, callback, lookup);
+  };
+}
+
+async function performGuardedLookup(
+  hostname: string,
+  options: Parameters<SocketLookup>[1],
+  callback: Parameters<SocketLookup>[2],
+  lookup: HostLookup,
+): Promise<void> {
+  try {
+    const addresses = await resolveHost(hostname, lookup);
+    const validated = addresses.map(({ address }) => ({
+      address,
+      family: assertPublicIp(address, hostname),
+    }));
+    const requestedFamily = normalizeFamily(options.family);
+    const matching =
+      requestedFamily === undefined
+        ? validated
+        : validated.filter(({ family }) => family === requestedFamily);
+    if (matching.length === 0) {
+      callback(new Error(`Failed to resolve ${hostname}: no matching public addresses`), "");
+      return;
+    }
+    if (options.all === true) {
+      callback(null, matching);
+      return;
+    }
+    const [first] = matching;
+    if (first === undefined) {
+      callback(new Error(`Failed to resolve ${hostname}: no public addresses`), "");
+      return;
+    }
+    callback(null, first.address, first.family);
+  } catch (error) {
+    callback(toError(error), "");
+  }
+}
+
+function parsePublicHttpUrl(input: string | URL): ParsedHttpUrl {
+  const url = input instanceof URL ? input : new URL(input);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error("URL must use HTTP or HTTPS");
+  }
+  if (url.username.length > 0 || url.password.length > 0) {
+    throw new Error("URLs containing credentials are not allowed");
+  }
+
+  const hostname = normalizeHostname(url.hostname);
+  if (hostname.length === 0) throw new Error("URL must include a hostname");
+  if (hostname === "localhost" || hostname.endsWith(".localhost")) {
+    throw new Error(`Blocked internal hostname: ${hostname}`);
+  }
+  if (isIP(hostname) !== 0) assertPublicIp(hostname, hostname);
+  return { hostname, url };
+}
+
+async function resolveHost(
+  hostname: string,
+  lookup: HostLookup,
+): Promise<readonly LookupAddress[]> {
+  let addresses: readonly LookupAddress[];
+  try {
+    addresses = await lookup(hostname);
+  } catch (error) {
+    throw new Error(`Failed to resolve ${hostname}: ${errorMessage(error)}`, { cause: error });
+  }
+  if (addresses.length === 0) throw new Error(`Failed to resolve ${hostname}: no addresses`);
+  return addresses;
+}
+
 function defaultLookup(hostname: string): Promise<readonly LookupAddress[]> {
   return dnsLookup(hostname, { all: true, order: "verbatim" });
 }
@@ -115,48 +191,39 @@ function normalizeHostname(hostname: string): string {
     .replace(/\.$/u, "");
 }
 
-function assertPublicIp(address: string, hostname: string): void {
+function assertPublicIp(address: string, hostname: string): IpFamily {
   const normalized = normalizeHostname(address);
-  const version = isIP(normalized);
-  if (version === 4 && isBlockedIpv4(normalized)) {
-    throw new Error(`Blocked internal address for ${hostname}: ${normalized}`);
+  if (isIP(normalized) === 0) {
+    throw new Error(`Resolved non-IP address for ${hostname}: ${address}`);
   }
-  if (version === 6 && isBlockedIpv6(normalized)) {
-    throw new Error(`Blocked internal address for ${hostname}: ${normalized}`);
+
+  const parsed = ipaddr.parse(normalized);
+  const isIpv4Compatible =
+    parsed.kind() === "ipv6" &&
+    parsed
+      .toByteArray()
+      .slice(0, 12)
+      .every((byte) => byte === 0);
+  if (parsed.range() !== "unicast" || isIpv4Compatible) {
+    throw new Error(`Blocked internal or reserved address for ${hostname}: ${normalized}`);
   }
-  if (version === 0) throw new Error(`Resolved non-IP address for ${hostname}: ${address}`);
+  return parsed.kind() === "ipv4" ? 4 : 6;
 }
 
-function isBlockedIpv4(address: string): boolean {
-  const parts = address.split(".").map(Number);
-  if (
-    parts.length !== 4 ||
-    parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)
-  ) {
-    return true;
-  }
-  const [first = -1, second = -1] = parts;
-  return (
-    first === 0 ||
-    first === 10 ||
-    first === 127 ||
-    (first === 100 && second >= 64 && second <= 127) ||
-    (first === 169 && second === 254) ||
-    (first === 172 && second >= 16 && second <= 31) ||
-    (first === 192 && second === 168) ||
-    (first === 198 && (second === 18 || second === 19)) ||
-    first >= 224
-  );
+function normalizeFamily(family: number | "IPv4" | "IPv6" | undefined): IpFamily | undefined {
+  let normalized: IpFamily | undefined;
+  if (family === 4 || family === "IPv4") normalized = 4;
+  if (family === 6 || family === "IPv6") normalized = 6;
+  return normalized;
 }
 
-function isBlockedIpv6(address: string): boolean {
-  const normalized = address.toLowerCase();
-  if (normalized === "::" || normalized === "::1") return true;
-  if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true;
-  if (/^fe[89ab]/u.test(normalized)) return true;
+async function cancelResponseBody(response: Response): Promise<void> {
+  if (response.body === null) return;
+  await response.body.cancel().catch(() => null);
+}
 
-  const mapped = /^::ffff:(\d+\.\d+\.\d+\.\d+)$/u.exec(normalized)?.[1];
-  return mapped === undefined ? false : isBlockedIpv4(mapped);
+function toError(cause: unknown): Error {
+  return cause instanceof Error ? cause : new Error(String(cause));
 }
 
 function errorMessage(cause: unknown): string {

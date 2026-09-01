@@ -1,13 +1,11 @@
 import type { Api, Model, ProviderHeaders } from "@earendil-works/pi-ai";
 import type { AgentToolResult, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateHead } from "@earendil-works/pi-coding-agent";
+import { parseResponseStream, readCodexErrorBody } from "./codex-stream.js";
 import {
-  eventSchema,
   jwtPayloadSchema,
   messageItemSchema,
-  responseSchema,
   webSearchItemSchema,
-  type ParsedResponse,
   type SourceCandidate,
 } from "./codex-schemas.js";
 
@@ -15,6 +13,7 @@ const CODEX_RESPONSES_URL = "https://chatgpt.com/backend-api/codex/responses";
 const SEARCH_TIMEOUT_MS = 60_000;
 const MAX_ALLOWED_DOMAINS = 100;
 const MAX_ERROR_BODY_LENGTH = 500;
+const MAX_SOURCES = 100;
 
 interface SearchSource {
   readonly title: string;
@@ -165,40 +164,11 @@ function combineSignal(signal: AbortSignal | undefined): AbortSignal {
 }
 
 async function throwResponseError(response: Response, apiKey: string): Promise<never> {
-  const body = await response.text();
-  const message = redactToken(body.slice(0, MAX_ERROR_BODY_LENGTH), apiKey);
+  const message = redactToken(
+    (await readCodexErrorBody(response)).slice(0, MAX_ERROR_BODY_LENGTH),
+    apiKey,
+  );
   throw new Error(`Codex web search failed (HTTP ${response.status}): ${message}`);
-}
-
-async function parseResponseStream(response: Response): Promise<ParsedResponse> {
-  const text = await response.text();
-  if (text.trimStart().startsWith("{")) return responseSchema.parse(JSON.parse(text));
-
-  const output: unknown[] = [];
-  let completed: ParsedResponse | undefined;
-  for (const line of text.split("\n")) {
-    if (!line.startsWith("data:")) continue;
-    const data = line.slice("data:".length).trim();
-    if (data.length === 0 || data === "[DONE]") continue;
-    const decoded: unknown = JSON.parse(data);
-    const parsedEvent = eventSchema.safeParse(decoded);
-    if (!parsedEvent.success) continue;
-    const event = parsedEvent.data;
-    if (event.type === "response.output_item.done" && event.item !== undefined) {
-      output.push(event.item);
-    }
-    if (
-      (event.type === "response.completed" || event.type === "response.done") &&
-      event.response !== undefined
-    ) {
-      completed = responseSchema.parse(event.response);
-    }
-  }
-  if (completed !== undefined) {
-    return (completed.output?.length ?? 0) > 0 ? completed : { ...completed, output };
-  }
-  if (output.length > 0) return { output };
-  throw new Error("Codex returned no parseable response output");
 }
 
 function formatSearchResult(
@@ -246,12 +216,14 @@ function extractSources(output: readonly unknown[]): SearchSource[] {
       for (const candidate of search.data.sources ?? []) addSource(sources, candidate);
     }
   }
-  return [...sources.values()];
+  return [...sources.values()].slice(0, MAX_SOURCES);
 }
 
 function addSource(sources: Map<string, SearchSource>, candidate: SourceCandidate): void {
   if (!URL.canParse(candidate.url)) return;
-  const url = removeTracking(candidate.url);
+  const parsedUrl = new URL(candidate.url);
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") return;
+  const url = removeTracking(parsedUrl);
   if (sources.has(url)) return;
   const candidateTitle = candidate.title ?? candidate.caption;
   const title =
@@ -263,15 +235,19 @@ function addSource(sources: Map<string, SearchSource>, candidate: SourceCandidat
 
 function renderSources(sources: readonly SearchSource[]): string {
   if (sources.length === 0) return "";
-  return `## Sources\n${sources.map((source, index) => `${index + 1}. [${source.title}](${source.url})`).join("\n")}`;
+  return `## Sources\n${sources.map((source, index) => `${index + 1}. [${escapeMarkdown(source.title)}](${source.url})`).join("\n")}`;
 }
 
-function removeTracking(input: string): string {
+function removeTracking(input: URL): string {
   const url = new URL(input);
   if (url.searchParams.get("utm_source") === "openai") {
     url.searchParams.delete("utm_source");
   }
   return url.toString();
+}
+
+function escapeMarkdown(input: string): string {
+  return input.replaceAll("\\", "\\\\").replaceAll("[", "\\[").replaceAll("]", "\\]");
 }
 
 function extractAccountId(token: string): string | undefined {

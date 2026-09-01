@@ -1,6 +1,6 @@
 {
   "name": "pi-web-engine",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "description": "Native OpenAI Codex web search and secure web fetching for Pi",
   "keywords": [
     "codex",
@@ -57,8 +57,10 @@
   },
   "dependencies": {
     "@mozilla/readability": "^0.6.0",
+    "ipaddr.js": "^2.5.0",
     "linkedom": "^0.18.12",
     "turndown": "^7.2.2",
+    "undici": "^8.10.0",
     "zod": "^4.5.4"
   },
   "devDependencies": {
