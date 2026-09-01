@@ -18,6 +18,7 @@ export interface WebFetchDetails {
 }
 
 interface FetchOptions {
+  readonly fetchImplementation?: typeof fetch;
   readonly format: FetchFormat;
   readonly signal: AbortSignal | undefined;
   readonly timeoutSeconds: number;
@@ -30,6 +31,27 @@ interface ConvertedContent {
 
 const MILLISECONDS_PER_SECOND = 1_000;
 const MAX_TITLE_LENGTH = 500;
+const STRUCTURED_TEXT_ACCEPT_FALLBACK =
+  "application/json;q=0.3,application/*+json;q=0.3,application/xml;q=0.2," +
+  "application/*+xml;q=0.2,text/javascript;q=0.1,application/javascript;q=0.1," +
+  "application/x-javascript;q=0.1";
+const SENSITIVE_QUERY_PARAMETERS = new Set([
+  "accesskey",
+  "accesskeyid",
+  "apikey",
+  "auth",
+  "authorization",
+  "code",
+  "credential",
+  "jwt",
+  "keypairid",
+  "oauthcode",
+  "password",
+  "secret",
+  "sig",
+  "signature",
+  "token",
+]);
 const turndown = new TurndownService({
   codeBlockStyle: "fenced",
   headingStyle: "atx",
@@ -39,33 +61,59 @@ export async function fetchWebContent(
   url: string,
   options: FetchOptions,
 ): Promise<AgentToolResult<WebFetchDetails>> {
+  const response = await requestWebResponse(url, options);
+  const contentType = response.headers.get("content-type") ?? "";
+  const body = await readTextResponse(response, contentType);
+  return formatFetchResult(url, response.url, body, contentType, options.format);
+}
+
+async function requestWebResponse(url: string, options: FetchOptions): Promise<Response> {
   const timeoutSignal = AbortSignal.timeout(options.timeoutSeconds * MILLISECONDS_PER_SECOND);
   const signal =
     options.signal === undefined ? timeoutSignal : AbortSignal.any([options.signal, timeoutSignal]);
-  const response = await fetchPublicUrl(url, {
-    headers: {
-      Accept: acceptHeader(options.format),
-      "Accept-Language": "en-US,en;q=0.9",
-      "User-Agent": "pi-web-engine (+https://github.com/WolfieLeader/pi-web-engine)",
+  const response = await fetchPublicUrl(
+    url,
+    {
+      headers: {
+        Accept: acceptHeader(options.format),
+        "Accept-Language": "en-US,en;q=0.9",
+        "User-Agent": "pi-web-engine/0.1.1 (+https://github.com/WolfieLeader/pi-web-engine)",
+      },
+      signal,
     },
-    signal,
-  });
-  if (!response.ok) {
-    await cancelResponseBody(response);
-    throw new Error(`HTTP ${response.status} ${response.statusText}`.trim());
-  }
+    options.fetchImplementation,
+  );
+  if (response.ok) return response;
+  await cancelResponseBody(response);
+  throw new Error(`HTTP ${response.status} ${response.statusText}`.trim());
+}
 
-  const contentType = response.headers.get("content-type") ?? "";
+async function readTextResponse(response: Response, contentType: string): Promise<string> {
   try {
     assertTextContentType(contentType);
   } catch (error) {
     await cancelResponseBody(response);
     throw error;
   }
-  const body = await readBoundedText(response, undefined, charsetFromContentType(contentType));
-  const finalUrl = response.url.length > 0 ? response.url : url;
-  const converted = convertContent(body, contentType, options.format, finalUrl);
-  const truncation = truncateHead(converted.content);
+  return readBoundedText(response, undefined, charsetFromContentType(contentType));
+}
+
+function formatFetchResult(
+  inputUrl: string,
+  rawResponseUrl: string,
+  body: string,
+  contentType: string,
+  format: FetchFormat,
+): AgentToolResult<WebFetchDetails> {
+  const requestedUrl = requestUrl(inputUrl);
+  const responseUrl = rawResponseUrl.length > 0 ? requestUrl(rawResponseUrl) : requestedUrl;
+  const finalUrl = sanitizeUrlForOutput(responseUrl);
+  const converted = convertContent(body, contentType, format, finalUrl);
+  const modelContent =
+    responseUrl === requestedUrl
+      ? converted.content
+      : `Final URL after redirects: ${finalUrl}\n\n${converted.content}`;
+  const truncation = truncateHead(modelContent);
   let output = truncation.content;
   if (truncation.truncated) {
     output += `\n\n[Output truncated: ${truncation.outputLines} of ${truncation.totalLines} lines, ${truncation.outputBytes} of ${truncation.totalBytes} bytes.]`;
@@ -74,14 +122,11 @@ export async function fetchWebContent(
   const details: WebFetchDetails = {
     contentType,
     finalUrl,
-    format: options.format,
+    format,
     truncated: truncation.truncated,
   };
   if (converted.title !== undefined) details.title = converted.title.slice(0, MAX_TITLE_LENGTH);
-  return {
-    content: [{ type: "text", text: output }],
-    details,
-  };
+  return { content: [{ type: "text", text: output }], details };
 }
 
 export function convertContent(
@@ -121,9 +166,42 @@ function titleFromDocument(document: Document, url: string): string | undefined 
 }
 
 function acceptHeader(format: FetchFormat): string {
-  if (format === "html") return "text/html,application/xhtml+xml;q=0.9,text/plain;q=0.5";
-  if (format === "text") return "text/plain,text/markdown;q=0.9,text/html;q=0.8";
-  return "text/markdown,text/x-markdown;q=0.9,text/html;q=0.8,text/plain;q=0.7";
+  let preferred: string;
+  if (format === "html") {
+    preferred = "text/html,application/xhtml+xml;q=0.9,text/plain;q=0.5";
+  } else if (format === "text") {
+    preferred = "text/plain,text/markdown;q=0.9,text/html;q=0.8";
+  } else {
+    preferred = "text/markdown,text/x-markdown;q=0.9,text/html;q=0.8,text/plain;q=0.7";
+  }
+  return `${preferred},${STRUCTURED_TEXT_ACCEPT_FALLBACK}`;
+}
+
+function requestUrl(input: string): string {
+  const url = new URL(input);
+  url.hash = "";
+  return url.href;
+}
+
+function sanitizeUrlForOutput(input: string): string {
+  const url = new URL(input);
+  url.hash = "";
+  for (const name of new Set(url.searchParams.keys())) {
+    if (isSensitiveQueryParameter(name)) url.searchParams.set(name, "REDACTED");
+  }
+  return url.href;
+}
+
+function isSensitiveQueryParameter(name: string): boolean {
+  const normalized = name.toLowerCase().replaceAll(/[^a-z0-9]/gu, "");
+  return (
+    SENSITIVE_QUERY_PARAMETERS.has(normalized) ||
+    normalized.endsWith("credential") ||
+    normalized.endsWith("password") ||
+    normalized.endsWith("secret") ||
+    normalized.endsWith("signature") ||
+    normalized.endsWith("token")
+  );
 }
 
 async function cancelResponseBody(response: Response): Promise<void> {

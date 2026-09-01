@@ -73,7 +73,7 @@ No additional configuration is required.
 
 ### `web_search` 🔎
 
-Searches the live web through Codex's native standalone search endpoint and returns evidence with normalized source URLs.
+Searches the web through Codex's native standalone search endpoint with external web access and returns evidence with normalized source URLs.
 
 | Parameter         | Type       | Required | Description                                      |
 | ----------------- | ---------- | -------- | ------------------------------------------------ |
@@ -83,6 +83,7 @@ Searches the live web through Codex's native standalone search endpoint and retu
 - Credentials are resolved through Pi and sent only to the official `https://chatgpt.com/backend-api` endpoint.
 - The active model must use Pi's official `openai-codex` provider and `openai-codex-responses` API.
 - Search output is limited to 50 KB or 2,000 lines and includes an explicit truncation notice when needed.
+- Time-sensitive claims should be verified against an authoritative first-party URL because external web access does not guarantee that every result snippet was retrieved at query time.
 
 ### `web_fetch` 📄
 
@@ -95,6 +96,8 @@ Fetches a public HTTP(S) URL and returns readable content.
 | `timeout` | `integer`                        | No       | Timeout in seconds, from 1 to 120; default 30 |
 
 - HTML pages are parsed with Mozilla Readability before Markdown or text conversion.
+- JSON, XML, and supported JavaScript text responses are accepted as structured-text fallbacks without overriding the requested format preference.
+- Redirected fetches include a sanitized final URL in model-visible output.
 - Non-text content and responses larger than 2 MB are rejected.
 - Tool output is limited to 50 KB or 2,000 lines.
 

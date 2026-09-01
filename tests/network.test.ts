@@ -98,6 +98,24 @@ describe("fetchPublicUrl redirects", () => {
     expect(requests).toBe(1);
   });
 
+  it("rejects URL credentials in redirects before the next request", async () => {
+    let requests = 0;
+    await expect(
+      fetchPublicUrl("https://example.com/start", {}, () => {
+        requests += 1;
+        return Promise.resolve(
+          new Response(null, {
+            headers: { location: "https://user:password@example.com/private" },
+            status: 302,
+          }),
+        );
+      }),
+    ).rejects.toThrow("URLs containing credentials are not allowed");
+    expect(requests).toBe(1);
+  });
+});
+
+describe("fetchPublicUrl cross-origin redirects", () => {
   it("strips credentials from cross-origin redirects", async () => {
     const seenHeaders: Headers[] = [];
     const responses = [
