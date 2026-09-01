@@ -1,44 +1,38 @@
-import { z } from "zod";
+import { Type, type Static } from "typebox";
 
-const responseSchema = z.looseObject({
-  output: z.array(z.unknown()).optional(),
-});
-const eventSchema = z.looseObject({
-  item: z.unknown().optional(),
-  response: z.unknown().optional(),
-  type: z.string(),
-});
-const sourceSchema = z.looseObject({
-  caption: z.string().optional(),
-  title: z.string().optional(),
-  url: z.string(),
-});
-const sourceCandidateSchema = z.union([
-  sourceSchema,
-  z.looseObject({ url_citation: sourceSchema }).transform(({ url_citation }) => url_citation),
-]);
-const messageItemSchema = z.looseObject({
-  content: z.array(
-    z.looseObject({
-      annotations: z.array(sourceCandidateSchema).optional(),
-      text: z.string().optional(),
-    }),
-  ),
-  type: z.literal("message"),
-});
-const webSearchItemSchema = z.looseObject({
-  action: z.looseObject({ sources: z.array(sourceCandidateSchema).optional() }).optional(),
-  sources: z.array(sourceCandidateSchema).optional(),
-  type: z.literal("web_search_call"),
-});
-const jwtPayloadSchema = z.looseObject({
-  "https://api.openai.com/auth": z
-    .looseObject({ chatgpt_account_id: z.string().optional() })
-    .optional(),
-});
+const sourceSchema = Type.Object(
+  {
+    caption: Type.Optional(Type.String()),
+    ref_id: Type.Optional(Type.String()),
+    snippet: Type.Optional(Type.String()),
+    title: Type.Optional(Type.String()),
+    url: Type.String(),
+  },
+  { additionalProperties: true },
+);
 
-type ParsedResponse = z.infer<typeof responseSchema>;
-type SourceCandidate = z.infer<typeof sourceSchema>;
+const searchResponseSchema = Type.Object(
+  {
+    encrypted_output: Type.Optional(Type.Union([Type.String(), Type.Null()])),
+    output: Type.String(),
+    results: Type.Optional(Type.Union([Type.Array(Type.Unknown()), Type.Null()])),
+  },
+  { additionalProperties: true },
+);
 
-export { eventSchema, jwtPayloadSchema, messageItemSchema, responseSchema, webSearchItemSchema };
-export type { ParsedResponse, SourceCandidate };
+const jwtPayloadSchema = Type.Object(
+  {
+    "https://api.openai.com/auth": Type.Optional(
+      Type.Object(
+        { chatgpt_account_id: Type.Optional(Type.String()) },
+        { additionalProperties: true },
+      ),
+    ),
+  },
+  { additionalProperties: true },
+);
+
+type SourceCandidate = Static<typeof sourceSchema>;
+
+export { jwtPayloadSchema, searchResponseSchema, sourceSchema };
+export type { SourceCandidate };

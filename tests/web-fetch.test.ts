@@ -35,5 +35,8 @@ describe("convertContent", () => {
     expect(
       convertContent('{"ok":true}', "application/json", "markdown", "https://example.com"),
     ).toEqual({ content: '{"ok":true}' });
+    expect(
+      convertContent("plain", "text/plain; note=text/html", "markdown", "https://example.com"),
+    ).toEqual({ content: "plain" });
   });
 });

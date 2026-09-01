@@ -1,6 +1,11 @@
 import { promisify } from "node:util";
 import { describe, expect, it } from "vitest";
-import { assertPublicHttpUrl, createGuardedLookup, readBoundedText } from "../src/network.js";
+import {
+  assertPublicHttpUrl,
+  createGuardedLookup,
+  fetchPublicUrl,
+  readBoundedText,
+} from "../src/network.js";
 
 const publicLookup = () => Promise.resolve([{ address: "93.184.216.34", family: 4 }] as const);
 
@@ -76,9 +81,73 @@ describe("createGuardedLookup", () => {
   });
 });
 
+describe("fetchPublicUrl redirects", () => {
+  it("rejects redirects to private addresses before the next request", async () => {
+    let requests = 0;
+    await expect(
+      fetchPublicUrl("https://example.com/start", {}, () => {
+        requests += 1;
+        return Promise.resolve(
+          new Response(null, {
+            headers: { location: "http://127.0.0.1/private" },
+            status: 302,
+          }),
+        );
+      }),
+    ).rejects.toThrow("Blocked internal or reserved address");
+    expect(requests).toBe(1);
+  });
+
+  it("strips credentials from cross-origin redirects", async () => {
+    const seenHeaders: Headers[] = [];
+    const responses = [
+      new Response(null, {
+        headers: { location: "https://www.example.com/final" },
+        status: 302,
+      }),
+      new Response("ok"),
+    ];
+    const response = await fetchPublicUrl(
+      "https://example.com/start",
+      {
+        headers: {
+          Authorization: "Bearer secret",
+          Cookie: "session=secret",
+          "X-Request-ID": "request-id",
+        },
+      },
+      createSequentialFetch(responses, seenHeaders),
+    );
+
+    const redirectedHeaders = seenHeaders[1];
+    expect(redirectedHeaders?.get("authorization")).toBeNull();
+    expect(redirectedHeaders?.get("cookie")).toBeNull();
+    expect(redirectedHeaders?.get("x-request-id")).toBe("request-id");
+    await expect(response.text()).resolves.toBe("ok");
+    expect(seenHeaders).toHaveLength(2);
+  });
+});
+
+function createSequentialFetch(responses: readonly Response[], seenHeaders: Headers[]) {
+  let index = 0;
+  return (_input: Parameters<typeof fetch>[0], init?: RequestInit) => {
+    seenHeaders.push(new Headers(init?.headers));
+    const response = responses[index];
+    index += 1;
+    return response === undefined
+      ? Promise.reject(new Error("Unexpected extra request"))
+      : Promise.resolve(response);
+  };
+}
+
 describe("readBoundedText", () => {
   it("reads text under the configured limit", async () => {
     await expect(readBoundedText(new Response("hello"), 5)).resolves.toBe("hello");
+  });
+
+  it("decodes the declared legacy text encoding", async () => {
+    const response = new Response(Uint8Array.of(0x63, 0x61, 0x66, 0xe9));
+    await expect(readBoundedText(response, 4, "windows-1252")).resolves.toBe("café");
   });
 
   it("rejects text over the configured limit and cancels the stream", async () => {
