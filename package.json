@@ -1,12 +1,18 @@
 {
   "name": "pi-web-engine",
   "version": "0.1.0",
-  "description": "Native OpenAI Codex web search and secure web fetching for Pi",
+  "description": "🔍 Native OpenAI Codex Web Search and Secure, Readable Web Fetching for Pi",
   "keywords": [
+    "ai",
+    "chatgpt",
     "codex",
     "openai",
+    "openai-codex",
+    "pi",
+    "pi-coding-agent",
     "pi-extension",
     "pi-package",
+    "ssrf",
     "web-fetch",
     "web-search"
   ],
