@@ -31,6 +31,7 @@ Search reuses Pi's existing Codex OAuth session, so there is no second API key t
 - 🧠 **Model-Agnostic Integration** — supports models from Pi's official `openai-codex` provider without a brittle model-name allowlist
 - 🛡️ **Hardened Web Fetching** — blocks private networks, DNS rebinding, unsafe redirects, URL credentials, and non-HTTP schemes
 - 📄 **Readable Output** — extracts article content and returns Markdown, plain text, or HTML
+- 🪪 **Configurable Request Identity** — supports a complete operator-controlled `User-Agent` value through Pi settings
 - 📏 **Bounded Responses** — enforces download, provider-response, line, and tool-output limits
 - 🧰 **Type-Safe & Tested** — built with TypeScript and TypeBox, with contract and security tests
 
@@ -69,11 +70,33 @@ Fetch https://example.com and return the page as Markdown.
 
 No additional configuration is required.
 
+## Configuration ⚙️
+
+`web_fetch` identifies itself with this default request header:
+
+```text
+pi-web-engine/0.1.1 (+https://github.com/WolfieLeader/pi-web-engine)
+```
+
+To replace the complete `User-Agent` value, add a namespaced setting to Pi's global `~/.pi/agent/settings.json`:
+
+```json
+{
+  "pi-web-engine": {
+    "userAgent": "OpenCode/1.0"
+  }
+}
+```
+
+A trusted project's `.pi/settings.json` may use the same shape and overrides the global value. Pi ignores project settings until the project is trusted; `pi-web-engine` preserves that boundary. The value must be 1–512 printable ASCII characters with no surrounding whitespace or control characters.
+
+The setting is operator-controlled and is intentionally not exposed as a `web_fetch` tool argument.
+
 ## Tools 🧰
 
 ### `web_search` 🔎
 
-Searches the live web through Codex's native standalone search endpoint and returns evidence with normalized source URLs.
+Searches the web through Codex's native standalone search endpoint with external web access and returns evidence with normalized source URLs.
 
 | Parameter         | Type       | Required | Description                                      |
 | ----------------- | ---------- | -------- | ------------------------------------------------ |
@@ -83,6 +106,7 @@ Searches the live web through Codex's native standalone search endpoint and retu
 - Credentials are resolved through Pi and sent only to the official `https://chatgpt.com/backend-api` endpoint.
 - The active model must use Pi's official `openai-codex` provider and `openai-codex-responses` API.
 - Search output is limited to 50 KB or 2,000 lines and includes an explicit truncation notice when needed.
+- Time-sensitive claims should be verified against an authoritative first-party URL because external web access does not guarantee that every result snippet was retrieved at query time.
 
 ### `web_fetch` 📄
 
@@ -95,6 +119,8 @@ Fetches a public HTTP(S) URL and returns readable content.
 | `timeout` | `integer`                        | No       | Timeout in seconds, from 1 to 120; default 30 |
 
 - HTML pages are parsed with Mozilla Readability before Markdown or text conversion.
+- JSON, XML, and supported JavaScript text responses are accepted as structured-text fallbacks without overriding the requested format preference.
+- Redirected fetches include a sanitized final URL in model-visible output.
 - Non-text content and responses larger than 2 MB are rejected.
 - Tool output is limited to 50 KB or 2,000 lines.
 
@@ -134,6 +160,8 @@ pi -e ./src/index.ts
 - 🧹 **Linting** — the development-only [anti-slop](https://github.com/dmmulroy/anti-slop) Oxlint plugin is vendored as required by upstream, retains its MIT license and provenance, and is excluded from the npm package
 
 ## Roadmap 🗺️
+
+See the [Pi web-tool ecosystem survey](https://github.com/WolfieLeader/pi-web-engine/issues/5) for a living comparison of features, optimizations, architecture, specialized media support, and security tradeoffs.
 
 Possible follow-up releases:
 
