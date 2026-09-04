@@ -5,7 +5,7 @@ import { getAgentDir } from "@earendil-works/pi-coding-agent";
 import { Parse } from "typebox/value";
 
 export const DEFAULT_USER_AGENT =
-  "pi-web-engine/0.1.1 (+https://github.com/WolfieLeader/pi-web-engine)";
+  "pi-web-engine/0.1.2 (+https://github.com/WolfieLeader/pi-web-engine)";
 export const MAX_USER_AGENT_LENGTH = 512;
 
 const settingsSchema = Type.Object({
