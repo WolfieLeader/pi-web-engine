@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. The project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] - 2026-09-04
+
+### Changed
+
+- Updated the Pi development SDK compatibility baseline to 0.85.0.
+- Updated the default `web_fetch` User-Agent release identifier to 0.1.2.
+- Added a local package metadata correction for Pi 0.85.0's undeclared `@earendil-works/pi-server` runtime import so clean development installs can run the full check suite.
+
 ## [0.1.1] - 2026-09-01
 
 ### Changed

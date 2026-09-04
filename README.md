@@ -75,7 +75,7 @@ No additional configuration is required.
 `web_fetch` identifies itself with this default request header:
 
 ```text
-pi-web-engine/0.1.1 (+https://github.com/WolfieLeader/pi-web-engine)
+pi-web-engine/0.1.2 (+https://github.com/WolfieLeader/pi-web-engine)
 ```
 
 To replace the complete `User-Agent` value, add a namespaced setting to Pi's global `~/.pi/agent/settings.json`:
